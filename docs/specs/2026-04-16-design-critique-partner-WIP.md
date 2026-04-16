@@ -1,7 +1,7 @@
 # 디자인 크리틱 파트너 — WIP Spec
 
-> **상태**: 🚧 작성 중 (브레인스토밍 단계, UX·콘텐츠 + 유저 플로우 1차 가안 완료)
-> **작성일**: 2026-04-16 (1차) → 2026-04-16 (2차 — 정체성·UX·콘텐츠) → 2026-04-16 (3차 — 유저 플로우 §4.6)
+> **상태**: 🚧 작성 중 (브레인스토밍 단계, UX·콘텐츠 + 유저 플로우 + Tech Stack 결정 완료)
+> **작성일**: 2026-04-16 (1차) → 2026-04-16 (2차 — 정체성·UX·콘텐츠) → 2026-04-16 (3차 — 유저 플로우 §4.6) → 2026-04-16 (4차 — Tech Stack: Next.js)
 > **다음 세션 시작 위치**: 본 문서 맨 아래 [§8 다음 세션 재개 가이드](#8-다음-세션-재개-가이드)
 
 ---
@@ -240,8 +240,8 @@ type Persona = {
 
 ### 5.2 정리 (코드/폴더 단계)
 
-- [ ] **Tech Stack 재확정**: PRD는 Next.js, 현재 셋업은 Vite — 어느 쪽으로 갈지
-- [ ] **`src/` 기존 코드 처리**: App.tsx (11KB) + components 27개 — 살릴 부분 있는지 확인 후 정리
+- [x] **Tech Stack 재확정**: ✅ **Next.js (App Router)** — PRD 원안 따라감. 결정 사유는 §6.3 참고
+- [ ] **`src/` 기존 코드 처리**: 전부 폐기 (Next.js 마이그레이션으로 어차피 갈아엎음) — 확인 필요
 - [ ] **메타파일 정리**: `README.md`, `metadata.json`, `index.html` 디자인 크리틱 파트너에 맞게 갈아엎기
 - [ ] **`design-system.html`의 토스 컬러 유지 여부**: 풀이 2 ("회사 로고/색 차용 금지") 원칙과의 조화
 
@@ -271,14 +271,21 @@ type Persona = {
 | `docs/design-tokens.md` | 4/16 작성 |
 | `.gitignore` | `.env*` + `!.env.example` ✓ 비밀값 보호 OK |
 
-### 6.3 PRD ↔ 구현 불일치
+### 6.3 PRD ↔ 구현 불일치 (해결안 박제)
 
-| 항목 | PRD | 현재 |
-|---|---|---|
-| 프레임워크 | Next.js (App Router) | **Vite + React** |
-| DB | 없음 (stateless) | (확인 필요) |
-| 스타일 | Tailwind + shadcn/ui | Tailwind 4 ✓ / shadcn 없음 |
-| 배포 | Vercel | 미정 |
+| 항목 | PRD | 현재 | 결정 |
+|---|---|---|---|
+| 프레임워크 | Next.js (App Router) | Vite + React | **Next.js로 마이그레이션** ✅ |
+| DB | 없음 (stateless) | (해당 없음) | stateless 유지 |
+| 스타일 | Tailwind + shadcn/ui | Tailwind 4 / shadcn 없음 | Tailwind 4 유지 + shadcn 도입 |
+| 배포 | Vercel | 미정 | Vercel (Next.js 일관성) |
+| API 키 보호 | (PRD 명시 없음) | — | **Next.js API Routes로 서버 사이드 호출** (클라이언트에서 키 노출 금지) |
+
+**Next.js 채택 사유**:
+1. Claude API 키 보호 — 클라이언트 직접 호출 금지, 서버 사이드 필요. API Routes가 가장 자연스러움
+2. Vite + 별도 백엔드 = 두 프로세스 = MVP에 과한 복잡도
+3. CRM 잔재 코드 어차피 폐기 → 마이그레이션 비용 따로 발생 안 함
+4. PRD 작성 시 결정한 사항. 번복할 강력한 이유 없음
 
 ### 6.4 git 상태
 
@@ -307,6 +314,7 @@ type Persona = {
 | 13 | 맥락 대화 질문 내용 | 포트폴리오 톤 (§4.2) | 회사 진행 중 톤 (이전안) |
 | 14 | 유저 플로우 5단계 | 1차 가안 박제(§4.6) + 시각적 디테일은 구현 후 다듬기 | 텍스트 단계에서 모든 디테일 결정 |
 | 15 | **STEP 5 "당신은 어느 쪽?" 입력칸** | **있음 (자기 표현 리허설 USP 핵심)** | 없음 (단순 AI 피드백 도구로 축소) |
+| 16 | Tech Stack | A: Next.js 마이그레이션 (PRD 따라감, API Routes로 키 보호) | B: Vite 유지 + Express 분리 / C: 셋업 이유 재조사 |
 
 ---
 
@@ -324,10 +332,9 @@ type Persona = {
 ```
 ✅ §4 UX·콘텐츠 결정 (충돌 트리거 / 맥락 대화 / 출력 포맷 / 디자인 원칙 / 페르소나 톤)
 ✅ §4.6 유저 플로우 5단계 1차 가안 박제 (시각적 디테일은 구현 후 검토)
+✅ Tech Stack: Next.js (App Router) 마이그레이션 결정
    ↓
-🎯 [다음] Tech Stack 재확정 (Next.js vs Vite — 현재 Vite 셋업 유지 vs 마이그레이션)
-   ↓
-폴더 정리 (§5.2 — CRM 잔재 제거, 메타파일 디자인 크리틱에 맞게)
+🎯 [다음] 폴더 정리 결정 — `design-system.html` 토스 컬러 처리 + `src/` 폐기 확인
    ↓
 [ 콘텐츠 spec 완성 — 본 문서 -WIP 떼고 -spec.md로 리네임 ]
    ↓

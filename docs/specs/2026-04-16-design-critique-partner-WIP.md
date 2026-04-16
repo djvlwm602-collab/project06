@@ -1,7 +1,7 @@
 # 디자인 크리틱 파트너 — WIP Spec
 
-> **상태**: 🚧 작성 중 (브레인스토밍 단계, UX·콘텐츠 + 유저 플로우 + Tech Stack 결정 완료)
-> **작성일**: 2026-04-16 (1차) → 2026-04-16 (2차 — 정체성·UX·콘텐츠) → 2026-04-16 (3차 — 유저 플로우 §4.6) → 2026-04-16 (4차 — Tech Stack: Next.js)
+> **상태**: 🚧 작성 중 (브레인스토밍 단계 — 모든 결정 박제 완료, spec 완성 직전)
+> **작성일**: 2026-04-16 (1차) → 2026-04-16 (2차 — 정체성·UX·콘텐츠) → 2026-04-16 (3차 — 유저 플로우 §4.6) → 2026-04-16 (4차 — Tech Stack: Next.js) → 2026-04-16 (5차 — 폴더 정리 결정)
 > **다음 세션 시작 위치**: 본 문서 맨 아래 [§8 다음 세션 재개 가이드](#8-다음-세션-재개-가이드)
 
 ---
@@ -238,12 +238,12 @@ type Persona = {
 
 - [x] ~~유저 플로우 5단계 디테일~~ → §4.6 1차 가안 박제 완료, 시각적 디테일은 구현 후 검토
 
-### 5.2 정리 (코드/폴더 단계)
+### 5.2 정리 (코드/폴더 단계 — plan/구현 단계에서 실행)
 
 - [x] **Tech Stack 재확정**: ✅ **Next.js (App Router)** — PRD 원안 따라감. 결정 사유는 §6.3 참고
-- [ ] **`src/` 기존 코드 처리**: 전부 폐기 (Next.js 마이그레이션으로 어차피 갈아엎음) — 확인 필요
-- [ ] **메타파일 정리**: `README.md`, `metadata.json`, `index.html` 디자인 크리틱 파트너에 맞게 갈아엎기
-- [ ] **`design-system.html`의 토스 컬러 유지 여부**: 풀이 2 ("회사 로고/색 차용 금지") 원칙과의 조화
+- [x] **`design-system.html` + `docs/design-tokens.md` 처리**: ✅ **`docs/legacy/`로 이동** (참고 자료 보관). 컬러·폰트는 풀이 2 맞춰 새로 짬, 토큰 구조 사고방식은 참고.
+- [x] **`src/` 기존 코드 처리**: ✅ **전부 폐기** (Next.js 마이그레이션으로 갈아엎음 + CRM 잔재라 살릴 가치 없음)
+- [x] **메타파일 정리**: ✅ **갈아엎기** (`README.md`, `metadata.json`, `index.html` — 디자인 크리틱 파트너에 맞게 새로 작성)
 
 ---
 
@@ -251,25 +251,25 @@ type Persona = {
 
 이 폴더는 **다른 프로젝트(CRM/칸반)에서 디자인 크리틱 파트너로 피벗 중**임. 잔재가 섞여 있음.
 
-### 6.1 다른 프로젝트 잔재 (정리 필요)
+### 6.1 다른 프로젝트 잔재 (정리 결정 박제)
 
-| 파일 | 문제 |
-|---|---|
-| `README.md` | "Run and deploy your AI Studio app" — Gemini API 템플릿 잔재 |
-| `metadata.json` | `"name": "New CRM"`, `"description": "Kanban-style project management"` |
-| `index.html` | `<title>My Google AI Studio App</title>` |
-| `src/App.tsx` (11KB) + `src/components/` (27개) | 칸반 보드 코드로 추정 |
-| `dist/` (4/10) | 옛날 빌드 결과물 |
+| 파일 | 문제 | 처리 |
+|---|---|---|
+| `README.md` | "Run and deploy your AI Studio app" — Gemini API 템플릿 잔재 | 갈아엎기 |
+| `metadata.json` | `"name": "New CRM"`, `"description": "Kanban-style project management"` | 갈아엎기 |
+| `index.html` | `<title>My Google AI Studio App</title>` | Next.js 마이그레이션 시 metadata API로 대체 |
+| `src/App.tsx` (11KB) + `src/components/` (27개) | 칸반 보드 코드 | **전부 폐기** |
+| `dist/` (4/10) | 옛날 빌드 결과물 | 삭제 + `.gitignore` 확인 |
 
-### 6.2 디자인 크리틱 파트너에 맞춰진 것 (유지)
+### 6.2 디자인 크리틱 파트너에 맞춰진 것 (유지/이전)
 
-| 파일 | 상태 |
-|---|---|
-| `.env.example` | `ANTHROPIC_API_KEY` ✓ Claude API |
-| `package.json` | `@anthropic-ai/sdk` ✓ React 19, Tailwind 4 ✓ |
-| `design-system.html` (25KB) | 토스 컬러 기반 — **풀이 2 원칙과 충돌 가능 (검토 필요)** |
-| `docs/design-tokens.md` | 4/16 작성 |
-| `.gitignore` | `.env*` + `!.env.example` ✓ 비밀값 보호 OK |
+| 파일 | 상태 | 처리 |
+|---|---|---|
+| `.env.example` | `ANTHROPIC_API_KEY` ✓ Claude API | 유지 |
+| `package.json` | `@anthropic-ai/sdk` ✓ React 19 | Next.js 마이그레이션 시 의존성 재정리 (next 추가, vite 제거) |
+| `design-system.html` (25KB) | 토스 컬러 기반 — 풀이 2 원칙과 충돌 | **`docs/legacy/`로 이동** (참고 자료 보관) |
+| `docs/design-tokens.md` | CRM 칸반용 (테이블/DataTableBody 토큰) | **`docs/legacy/`로 이동** (참고 자료 보관) |
+| `.gitignore` | `.env*` + `!.env.example` ✓ 비밀값 보호 OK | 유지 |
 
 ### 6.3 PRD ↔ 구현 불일치 (해결안 박제)
 
@@ -315,6 +315,8 @@ type Persona = {
 | 14 | 유저 플로우 5단계 | 1차 가안 박제(§4.6) + 시각적 디테일은 구현 후 다듬기 | 텍스트 단계에서 모든 디테일 결정 |
 | 15 | **STEP 5 "당신은 어느 쪽?" 입력칸** | **있음 (자기 표현 리허설 USP 핵심)** | 없음 (단순 AI 피드백 도구로 축소) |
 | 16 | Tech Stack | A: Next.js 마이그레이션 (PRD 따라감, API Routes로 키 보호) | B: Vite 유지 + Express 분리 / C: 셋업 이유 재조사 |
+| 17 | `design-system.html` + `docs/design-tokens.md` 처리 | B: `docs/legacy/`로 이동 (참고 보관, 컬러·폰트는 새로) | A 전부 폐기 / C 컬러만 교체 (혼란 위험) |
+| 18 | `src/` 기존 코드 처리 | 전부 폐기 (CRM 잔재 + Next.js 마이그레이션으로 어차피 갈아엎음) | 일부 살리기 (살릴 가치 없음) |
 
 ---
 
@@ -333,8 +335,9 @@ type Persona = {
 ✅ §4 UX·콘텐츠 결정 (충돌 트리거 / 맥락 대화 / 출력 포맷 / 디자인 원칙 / 페르소나 톤)
 ✅ §4.6 유저 플로우 5단계 1차 가안 박제 (시각적 디테일은 구현 후 검토)
 ✅ Tech Stack: Next.js (App Router) 마이그레이션 결정
+✅ 폴더 정리 결정 박제 (§5.2, §6.1, §6.2)
    ↓
-🎯 [다음] 폴더 정리 결정 — `design-system.html` 토스 컬러 처리 + `src/` 폐기 확인
+🎯 [다음] spec -WIP 떼기 → spec 완성 → writing-plans 스킬로 plan 작성
    ↓
 [ 콘텐츠 spec 완성 — 본 문서 -WIP 떼고 -spec.md로 리네임 ]
    ↓

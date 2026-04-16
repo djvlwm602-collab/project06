@@ -1,0 +1,5 @@
+{
+  "name": "New CRM",
+  "description": "A Kanban-style project management tool with drag-and-drop tasks.",
+  "requestFramePermissions": []
+}

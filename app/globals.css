@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  /* 폰트 — system-ui 스택 (브랜드 폰트 차용 금지) */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Pretendard", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* 색 — 무채색 스케일만. 브랜드 컬러 없음 */
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-border: #e5e5e5;
+  --color-border-strong: #d4d4d4;
+
+  --color-text-primary: #111111;
+  --color-text-secondary: #525252;
+  --color-text-muted: #a3a3a3;
+
+  --color-accent: #171717;          /* 강조 = 거의 검정 (브랜드 컬러 아님) */
+  --color-accent-hover: #000000;
+  --color-accent-foreground: #ffffff;
+
+  --color-subtle: #f5f5f5;           /* 옅은 배경 (선택 상태·카드 바닥) */
+
+  --color-danger: #b91c1c;           /* 에러 전용. 과용 금지 */
+
+  /* 레이아웃 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+@layer base {
+  html, body {
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+  }
+  body {
+    min-height: 100dvh;
+  }
+  * {
+    border-color: var(--color-border);
+  }
+}

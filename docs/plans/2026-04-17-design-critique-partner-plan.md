@@ -1,167 +1,196 @@
-# 디자인 크리틱 파트너 — Implementation Plan
+# 디자인 크리틱 파트너 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
->
-> **단일 출처 (Spec)**: `docs/specs/2026-04-16-design-critique-partner-spec.md`. plan과 spec이 충돌하면 spec이 정답.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 디자이너가 포트폴리오 완성작 스크린샷을 올리면 6명의 회사 스타일 페르소나가 디자인 크리틱과 충돌 관점, 그리고 자기 표현 리허설 입력칸을 제공하는 stateless Next.js 웹 앱 MVP를 만든다.
+**Goal:** 포트폴리오 스크린샷을 업로드하면 6인의 "○○ 스타일" 페르소나가 병렬 스트리밍으로 크리틱을 주고, 강한 충돌 쌍에는 "당신은 어느 쪽?" 자기 표현 리허설 카드를 띄우는 Next.js 앱을 구현한다.
 
-**Architecture:** Next.js 15 App Router. 클라이언트는 5단계 라우팅(`/` → `/context` → `/personas` → `/critique`)으로 진행하고 Zustand 스토어가 단계 간 상태를 들고 있는다. `/api/critique` Route Handler가 서버 사이드에서 `@anthropic-ai/sdk`로 Claude vision 모델을 페르소나별로 호출하고 텍스트 청크를 ReadableStream으로 클라이언트에 흘려보낸다. DB·계정 없음 (stateless). 테스트는 Vitest + React Testing Library로 데이터·로직·API 검증에 집중하고 UI 폴리시는 수동 스모크.
+**Architecture:** Next.js 15 App Router + React 19 + Tailwind 4 + shadcn/ui. Claude API 호출은 `/api/critique`(Route Handler)에서 서버 사이드만 수행 (API 키 보호). 도메인 로직(페르소나 데이터, 충돌 매트릭스, system prompt 빌더, 카드 길이 가드레일)은 순수 TS 함수로 분리 → 풀 TDD. API Route는 `@anthropic-ai/sdk` 모킹 통합 테스트. UI는 STEP별 최소 행동 테스트. 클라이언트 상태는 Zustand 단일 스토어(파일, 맥락 답변, 선택 페르소나, 크리틱 결과). STEP 5 "어느 쪽?" 입력은 스토어 내 클라이언트 상태로만 저장(DB 없음).
 
-**Tech Stack:** Next.js 15 (App Router) · TypeScript · Tailwind 4 · shadcn/ui · Zustand · Vitest + RTL · `@anthropic-ai/sdk` (claude-sonnet-4-6, prompt caching on system) · Vercel 배포
+**Tech Stack:** Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, `@anthropic-ai/sdk`, Zustand, Vitest, @testing-library/react, jsdom.
 
-**고정 결정 (spec 외 본 plan에서 추가 박제)**:
-1. 이미지 전달: 클라이언트에서 base64 인코딩 → `/api/critique` 요청 body에 인라인
-2. 클라이언트 상태: Zustand + `persist` 미들웨어 (sessionStorage)
-3. 라우팅: 멀티 페이지 (`/`, `/context`, `/personas`, `/critique`)
-4. 스트리밍: 서버에서 Anthropic 이벤트 → 텍스트 델타만 추출해 ReadableStream으로 패스, 클라는 chunk append
-5. 테스트: Vitest + RTL (e2e는 MVP 범위 밖, STEP별 수동 스모크)
-6. Claude 모델: `claude-sonnet-4-6` (6 페르소나 병렬 호출 비용·품질 밸런스). 시스템 프롬프트는 `cache_control: ephemeral`로 캐싱
-
-**파일 구조 (목표)**:
-
-```
-울트라플랜/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx                      # STEP 1 랜딩
-│   ├── globals.css                   # Tailwind 4 @theme + 디자인 토큰
-│   ├── context/page.tsx              # STEP 2
-│   ├── personas/page.tsx             # STEP 3
-│   ├── critique/page.tsx             # STEP 4 + STEP 5
-│   └── api/critique/route.ts         # 서버 사이드 Claude 호출
-├── components/
-│   ├── ui/                           # shadcn — Button, Card, Checkbox, Textarea, Input
-│   ├── ImageDropzone.tsx
-│   ├── ContextForm.tsx
-│   ├── PersonaCheckbox.tsx
-│   ├── ConflictPreview.tsx
-│   ├── PersonaCard.tsx
-│   ├── ConflictCard.tsx
-│   └── Disclaimer.tsx
-├── lib/
-│   ├── personas.ts                   # Persona 타입 + 6인 데이터
-│   ├── personas.test.ts
-│   ├── prompts.ts                    # system prompt 빌더
-│   ├── prompts.test.ts
-│   ├── conflicts.ts                  # 6×6 매트릭스 + 룩업
-│   ├── conflicts.test.ts
-│   ├── store.ts                      # Zustand
-│   ├── store.test.ts
-│   ├── claude.ts                     # Anthropic SDK 래퍼 (서버용)
-│   ├── streaming.ts                  # 클라이언트 fetch + reader 훅
-│   └── utils.ts                      # cn 등
-├── tests/setup.ts                    # RTL/jest-dom 셋업
-├── docs/
-│   ├── specs/2026-04-16-design-critique-partner-spec.md
-│   ├── plans/2026-04-17-design-critique-partner-plan.md
-│   └── legacy/                       # design-system.html + design-tokens.md
-├── public/
-├── .env.example                      # ANTHROPIC_API_KEY=...
-├── .gitignore
-├── next.config.ts
-├── tsconfig.json
-├── postcss.config.mjs
-├── vitest.config.ts
-├── components.json                   # shadcn
-├── package.json
-└── README.md
-```
-
-**커밋 규칙 (CLAUDE.md 따름)**: `[what] — [why]` 형식. 영어 동사로 시작, em-dash 뒤에 동기. `Co-Authored-By` 필수.
+**SSOT(Single Source of Truth):** `docs/specs/2026-04-16-design-critique-partner-spec.md`. 본 plan은 spec §0–§8을 구현으로 옮긴 것이다. 스펙에서 벗어나는 결정을 새로 하지 말 것.
 
 ---
 
-# Phase 0 — Foundation & Cleanup
+## 파일 구조 (구현 완료 시 최종 형태)
 
-CRM 잔재 제거 → Next.js 기반 마련 → 테스트·디자인 시스템 가동.
+```
+design-critique-partner/
+├── .env.example                        # (유지)
+├── .env                                # (유지, 커밋 금지)
+├── .gitignore                          # (업데이트: .next/ 추가)
+├── README.md                           # (갈아엎기)
+├── next.config.ts                      # (신규)
+├── package.json                        # (갈아엎기)
+├── tsconfig.json                       # (갈아엎기)
+├── postcss.config.mjs                  # (신규)
+├── components.json                     # (신규, shadcn)
+├── vitest.config.ts                    # (신규)
+├── next-env.d.ts                       # (Next.js 자동 생성)
+├── app/
+│   ├── layout.tsx                      # 루트 레이아웃 + metadata
+│   ├── globals.css                     # Tailwind 4 import + 중립 토큰
+│   ├── page.tsx                        # STEP 1 랜딩
+│   ├── context/page.tsx                # STEP 2 맥락 대화
+│   ├── personas/page.tsx               # STEP 3 페르소나 선택
+│   ├── result/page.tsx                 # STEP 4 + STEP 5 (동일 페이지)
+│   └── api/
+│       └── critique/route.ts           # Claude 스트리밍 프록시
+├── lib/
+│   ├── utils.ts                        # cn() 헬퍼
+│   ├── personas/
+│   │   ├── types.ts                    # Persona, PersonaId 타입
+│   │   ├── definitions.ts              # 6인 페르소나 데이터
+│   │   └── system-prompt.ts            # system prompt 빌더
+│   ├── conflict/
+│   │   ├── matrix.ts                   # 6×6 매트릭스 + 레벨
+│   │   ├── themes.ts                   # 강한 충돌 5쌍 테마
+│   │   └── lookup.ts                   # 선택 인원 → 활성 충돌 카드
+│   ├── critique/
+│   │   ├── types.ts                    # ContextAnswer, CritiqueCard 타입
+│   │   ├── context-questions.ts        # §4.2 4개 질문 데이터
+│   │   └── guardrails.ts               # 40/50/80/200 길이 검증
+│   └── store.ts                        # Zustand 앱 스토어
+├── components/
+│   ├── ui/                             # shadcn/ui primitives
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   ├── checkbox.tsx
+│   │   ├── input.tsx
+│   │   ├── textarea.tsx
+│   │   └── label.tsx
+│   └── app/
+│       ├── Disclaimer.tsx              # §2.2 디스클레이머
+│       ├── DropZone.tsx                # STEP 1 업로드 영역
+│       ├── ContextForm.tsx             # STEP 2 4개 질문 폼
+│       ├── PersonaPicker.tsx           # STEP 3 6개 체크 + 충돌 수
+│       ├── CritiqueCard.tsx            # STEP 4 페르소나 카드
+│       └── ConflictCard.tsx            # STEP 5 충돌 카드 (⭐ "어느 쪽?" 입력)
+├── tests/
+│   ├── setup.ts                        # @testing-library/jest-dom 로드
+│   ├── helpers/
+│   │   └── mock-anthropic.ts           # SDK 모킹 헬퍼
+│   └── api/
+│       └── critique.test.ts            # API Route 통합 테스트 (모킹)
+└── docs/
+    ├── legacy/                         # 참고 자료 (신규)
+    │   ├── design-system.html          # (이동)
+    │   └── design-tokens.md            # (이동)
+    ├── specs/2026-04-16-design-critique-partner-spec.md
+    └── plans/2026-04-17-design-critique-partner-plan.md  # 본 문서
+```
 
-## Task 0.1: 잔재 자료를 `docs/legacy/`로 이동
+각 `lib/*` 모듈과 컴포넌트는 같은 디렉터리에 `*.test.ts(x)` 동거(co-locate)한다.
+
+---
+
+# Phase A — 프로젝트 기반
+
+현재 폴더의 CRM 잔재를 제거하고 Next.js + Tailwind 4 + shadcn + Vitest 기반을 구축한다.
+
+---
+
+### Task A1: legacy 자료 이동 (참고 보관)
 
 **Files:**
-- Create: `docs/legacy/.gitkeep`
+- Create: `docs/legacy/` (디렉터리)
 - Move: `design-system.html` → `docs/legacy/design-system.html`
 - Move: `docs/design-tokens.md` → `docs/legacy/design-tokens.md`
 
-- [ ] **Step 1: `docs/legacy/` 폴더 만들고 두 파일 이동**
+- [ ] **Step 1: legacy 디렉터리 생성 + 이동**
 
 ```bash
 mkdir -p docs/legacy
 git mv design-system.html docs/legacy/design-system.html
 git mv docs/design-tokens.md docs/legacy/design-tokens.md
-touch docs/legacy/.gitkeep
 ```
 
-- [ ] **Step 2: 이동 결과 확인**
+- [ ] **Step 2: 이동 확인**
 
 ```bash
-ls docs/legacy
+ls docs/legacy/
 ```
-Expected: `.gitkeep  design-system.html  design-tokens.md`
+Expected: `design-system.html  design-tokens.md`
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git add docs/legacy design-system.html docs/design-tokens.md
-git commit -m "$(cat <<'EOF'
-Move legacy assets to docs/legacy — preserve CRM-era design tokens for reference without polluting active workspace
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add -A
+git commit -m "Move design-system.html + design-tokens.md to docs/legacy — keep as reference, replaced by pool 2 neutral tokens"
 ```
 
 ---
 
-## Task 0.2: CRM Kanban 코드 폐기
+### Task A2: CRM 잔재 삭제 (src/, vite 설정, 옛 index.html, metadata.json)
 
 **Files:**
 - Delete: `src/` (전체)
-- Delete: `dist/`
-- Delete: `index.html`, `vite.config.ts`
+- Delete: `vite.config.ts`
+- Delete: `index.html`
+- Delete: `metadata.json`
+- Delete: `package-lock.json` (Next.js 의존성 재생성 전제)
 
-- [ ] **Step 1: 폐기 대상 일괄 삭제**
-
-```bash
-rm -rf src dist
-rm -f index.html vite.config.ts
-```
-
-- [ ] **Step 2: `dist/`가 `.gitignore`에 있는지 확인 (없으면 추가)**
+- [ ] **Step 1: 파일 삭제**
 
 ```bash
-grep -q '^dist' .gitignore || echo "dist" >> .gitignore
+rm -rf src
+rm vite.config.ts index.html metadata.json package-lock.json
 ```
 
-- [ ] **Step 3: 폴더 상태 검증**
+- [ ] **Step 2: 삭제 확인**
 
 ```bash
 ls
 ```
-Expected: 더 이상 `src`, `dist`, `index.html`, `vite.config.ts` 없음. `package.json`, `package-lock.json`, `tsconfig.json`, `docs`, `node_modules`, `.env*`, `.gitignore`, `metadata.json`, `README.md`만 남음.
+Expected: 루트에 `src/`·`vite.config.ts`·`index.html`·`metadata.json`·`package-lock.json` 없음. `docs/`·`.env`·`.env.example`·`.gitignore`·`package.json`·`tsconfig.json`·`README.md`만 남음.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
 git add -A
-git status   # 삭제 목록만 보이는지 확인
-git commit -m "$(cat <<'EOF'
-Discard CRM kanban codebase — clean slate before Next.js migration; spec §6.1 confirms src/ is unsalvageable
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git commit -m "Remove CRM kanban remnants — src/, vite config, old index.html, stale metadata.json"
 ```
 
 ---
 
-## Task 0.3: `package.json` 갈아엎고 Next.js + 신규 의존성 설치
+### Task A3: `.gitignore` 업데이트 (`.next/` 추가)
 
 **Files:**
-- Modify: `package.json` (전체 교체)
-- Generate: `package-lock.json` (자동)
+- Modify: `.gitignore`
 
-- [ ] **Step 1: `package.json`을 새 내용으로 교체**
+- [ ] **Step 1: `.next/` 추가**
+
+파일 최종 내용:
+
+```
+node_modules/
+.next/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+```
+
+- [ ] **Step 2: 커밋**
+
+```bash
+git add .gitignore
+git commit -m "Ignore .next/ build output — Next.js migration prep"
+```
+
+---
+
+### Task A4: `package.json` 갈아엎기 (Next.js + Tailwind 4 + Vitest)
+
+**Files:**
+- Rewrite: `package.json`
+
+- [ ] **Step 1: 새 `package.json` 작성**
+
+파일 전체 내용:
 
 ```json
 {
@@ -179,24 +208,24 @@ EOF
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.546.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.5.0",
-    "zod": "^3.23.8",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.14",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.0.4",
-    "autoprefixer": "^10.4.21",
+    "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.1",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
@@ -205,57 +234,30 @@ EOF
 }
 ```
 
-- [ ] **Step 2: 락파일 갱신 + 설치**
+- [ ] **Step 2: 의존성 설치**
 
 ```bash
-rm -f package-lock.json
 npm install
 ```
-Expected: 정상 설치 완료, 경고는 OK, 에러 없음.
+Expected: `package-lock.json` 재생성. 설치 오류 없음.
 
-- [ ] **Step 3: Next.js 바이너리 동작 확인**
-
-```bash
-npx next --version
-```
-Expected: `15.x.x`
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git add package.json package-lock.json .gitignore
-git commit -m "$(cat <<'EOF'
-Replace deps with Next.js stack — drop vite/express/recharts/date-fns/motion/dotenv/tsx; add next, zustand, zod, vitest, RTL
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add package.json package-lock.json
+git commit -m "Rewrite package.json for Next.js 15 + Tailwind 4 + Vitest — drop vite/express"
 ```
 
 ---
 
-## Task 0.4: Next.js App Router 스켈레톤 + tsconfig
+### Task A5: `tsconfig.json` 갈아엎기 (Next.js 표준)
 
 **Files:**
-- Create: `next.config.ts`
-- Create: `tsconfig.json` (Next.js 형식으로 교체)
-- Create: `app/layout.tsx`
-- Create: `app/page.tsx`
-- Create: `next-env.d.ts` (자동 생성)
+- Rewrite: `tsconfig.json`
 
-- [ ] **Step 1: `next.config.ts` 생성**
+- [ ] **Step 1: 새 `tsconfig.json` 작성**
 
-```ts
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  reactStrictMode: true,
-};
-
-export default nextConfig;
-```
-
-- [ ] **Step 2: `tsconfig.json` Next.js 형식으로 교체**
+파일 전체 내용:
 
 ```json
 {
@@ -274,2674 +276,3008 @@ export default nextConfig;
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./*"] }
+    "paths": { "@/*": ["./*"] },
+    "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "docs/legacy"]
+  "exclude": ["node_modules"]
 }
 ```
 
-- [ ] **Step 3: `app/layout.tsx` 생성**
-
-```tsx
-/**
- * Role: Next.js App Router 루트 레이아웃 — 한국어 lang, body 폰트 baseline
- * Key Features: 글로벌 메타데이터, globals.css 임포트
- * Dependencies: app/globals.css
- */
-import type { Metadata } from "next";
-import "./globals.css";
-
-export const metadata: Metadata = {
-  title: "디자인 크리틱 파트너",
-  description:
-    "포트폴리오 완성작을 들고 온 디자이너에게 6명의 회사 스타일 페르소나가 면접·리뷰 질문과 피드백을 주는 웹 앱.",
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="ko">
-      <body className="bg-bg text-text-primary antialiased">{children}</body>
-    </html>
-  );
-}
-```
-
-- [ ] **Step 4: `app/page.tsx` 임시 페이지 생성 (Phase 3에서 교체)**
-
-```tsx
-/**
- * Role: STEP 1 랜딩 페이지 (Phase 3에서 본격 구현)
- * Key Features: 임시 — Next.js 동작 확인용
- * Dependencies: 없음
- */
-export default function HomePage() {
-  return <main className="p-8">디자인 크리틱 파트너 — 셋업 OK</main>;
-}
-```
-
-- [ ] **Step 5: `app/globals.css` 임시 (Tailwind는 Task 0.5에서)**
-
-```css
-:root {
-  color-scheme: light;
-}
-```
-
-- [ ] **Step 6: 개발 서버 켜고 200 확인**
+- [ ] **Step 2: 타입체크 확인 (에러만 안 나면 OK — 아직 파일 없음)**
 
 ```bash
-npm run dev &
-sleep 5
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/
-kill %1
+npm run typecheck
 ```
-Expected: `200`
+Expected: 오류 없음 (아직 소스 파일 없음).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git add next.config.ts tsconfig.json app
-git commit -m "$(cat <<'EOF'
-Add Next.js App Router skeleton — root layout, placeholder home page, ko lang baseline
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add tsconfig.json
+git commit -m "Replace tsconfig with Next.js App Router + path alias @/* + vitest globals"
 ```
 
 ---
 
-## Task 0.5: Tailwind 4 + 자체 디자인 토큰 (회사 컬러 차용 금지)
-
-> spec §4.4 원칙 4: "회사 이름은 빌리되 로고·색·폰트는 차용하지 않는다." → Toss 컬러(#3182F6) 그대로 못 씀. 중립 톤으로 새로 짠다. 이 토큰은 시각 디테일을 건드리는 후속 task에서도 동일하게 쓰인다.
+### Task A6: `next.config.ts` + `postcss.config.mjs` 생성
 
 **Files:**
+- Create: `next.config.ts`
 - Create: `postcss.config.mjs`
-- Modify: `app/globals.css`
 
-- [ ] **Step 1: `postcss.config.mjs` 생성**
+- [ ] **Step 1: `next.config.ts` 작성**
+
+```ts
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+};
+
+export default nextConfig;
+```
+
+- [ ] **Step 2: `postcss.config.mjs` 작성**
 
 ```js
 export default {
   plugins: {
-    "@tailwindcss/postcss": {},
+    '@tailwindcss/postcss': {},
   },
 };
 ```
 
-- [ ] **Step 2: `app/globals.css`에 Tailwind 4 + 디자인 토큰 정의**
+- [ ] **Step 3: 커밋**
+
+```bash
+git add next.config.ts postcss.config.mjs
+git commit -m "Add next.config.ts + postcss config for Tailwind 4"
+```
+
+---
+
+### Task A7: `app/globals.css` — Tailwind 4 + 풀이 2 중립 토큰
+
+풀이 2 원칙: 회사 브랜드 컬러/폰트 차용 금지. 중립 회색 스케일 + 거의 검정 액센트만 사용한다.
+
+**Files:**
+- Create: `app/globals.css`
+
+- [ ] **Step 1: `globals.css` 작성**
 
 ```css
 @import "tailwindcss";
 
 @theme {
-  /* 색상 — 회사 차용 금지. 중립 잉크 + 절제된 액센트 */
-  --color-bg: #fafaf9;            /* 페이지 배경 */
-  --color-surface: #ffffff;       /* 카드 표면 */
-  --color-border: #e7e5e4;
-  --color-border-strong: #d6d3d1;
+  /* 폰트 — system-ui 스택 (브랜드 폰트 차용 금지) */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Pretendard", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --color-text-primary: #1c1917;
-  --color-text-secondary: #57534e;
-  --color-text-muted: #a8a29e;
+  /* 색 — 무채색 스케일만. 브랜드 컬러 없음 */
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-border: #e5e5e5;
+  --color-border-strong: #d4d4d4;
 
-  --color-accent: #4338ca;        /* indigo-700 — 액션 */
-  --color-accent-hover: #3730a3;
-  --color-accent-subtle: #eef2ff;
+  --color-text-primary: #111111;
+  --color-text-secondary: #525252;
+  --color-text-muted: #a3a3a3;
 
-  --color-warm: #c2410c;          /* orange-700 — 충돌 카드 강조 */
-  --color-warm-subtle: #fff7ed;
+  --color-accent: #171717;          /* 강조 = 거의 검정 (브랜드 컬러 아님) */
+  --color-accent-hover: #000000;
+  --color-accent-foreground: #ffffff;
 
-  --color-success: #15803d;
-  --color-danger: #b91c1c;
+  --color-subtle: #f5f5f5;           /* 옅은 배경 (선택 상태·카드 바닥) */
 
-  /* 타이포 */
-  --font-sans: "Pretendard Variable", Pretendard, -apple-system,
-    BlinkMacSystemFont, system-ui, sans-serif;
+  --color-danger: #b91c1c;           /* 에러 전용. 과용 금지 */
 
-  /* 라운드 */
-  --radius-card: 0.75rem;
+  /* 레이아웃 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 }
 
-html, body {
-  font-family: var(--font-sans);
+@layer base {
+  html, body {
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+  }
+  body {
+    min-height: 100dvh;
+  }
+  * {
+    border-color: var(--color-border);
+  }
 }
 ```
 
-- [ ] **Step 3: 토큰이 적용되는지 확인 — `app/page.tsx`에 토큰 클래스 잠깐 사용**
+- [ ] **Step 2: 커밋**
+
+```bash
+git add app/globals.css
+git commit -m "Add globals.css — Tailwind 4 + neutral-only tokens (pool 2: no brand colors/fonts)"
+```
+
+---
+
+### Task A8: `lib/utils.ts` — `cn()` 헬퍼
+
+**Files:**
+- Create: `lib/utils.ts`
+
+- [ ] **Step 1: `cn()` 작성**
+
+```ts
+/**
+ * Role: Tailwind 클래스 병합 헬퍼 (shadcn 표준 패턴)
+ * Key Features: clsx로 조건부 결합 + tailwind-merge로 충돌 해소
+ * Dependencies: clsx, tailwind-merge
+ */
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+// shadcn/ui 표준 — 클래스 조건 결합과 Tailwind 충돌 해소를 한 번에
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs));
+}
+```
+
+- [ ] **Step 2: 커밋**
+
+```bash
+git add lib/utils.ts
+git commit -m "Add cn() helper — shadcn standard clsx + tailwind-merge"
+```
+
+---
+
+### Task A9: `app/layout.tsx` + `app/page.tsx` — 스켈레톤 + dev 서버 가동 확인
+
+**Files:**
+- Create: `app/layout.tsx`
+- Create: `app/page.tsx`
+
+- [ ] **Step 1: 루트 레이아웃 작성**
 
 ```tsx
-export default function HomePage() {
+/**
+ * Role: Next.js 루트 레이아웃 — metadata + globals.css 로드
+ * Key Features: 앱 전체 <html>/<body> 골격, 한국어 lang
+ */
+import type { Metadata } from 'next';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: '디자인 크리틱 파트너',
+  description: '완성작 들고 와요. 6명이 봐줍니다.',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="p-8 bg-surface border border-border rounded-card text-text-primary">
-      <h1 className="text-2xl font-semibold">디자인 크리틱 파트너 — 셋업 OK</h1>
-      <p className="mt-2 text-text-secondary">디자인 토큰 동작 확인용</p>
+    <html lang="ko">
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+- [ ] **Step 2: 임시 랜딩 작성 (스켈레톤 — STEP 1 정식 구현은 Task C4)**
+
+```tsx
+export default function Home() {
+  return (
+    <main className="min-h-screen flex items-center justify-center">
+      <h1 className="text-2xl">Design Critique Partner — scaffold OK</h1>
     </main>
   );
 }
 ```
 
-- [ ] **Step 4: 개발 서버에서 시각 확인 (수동)**
+- [ ] **Step 3: dev 서버 가동 확인**
 
 ```bash
 npm run dev
 ```
-Expected: `http://localhost:3000/`에 위 카드가 흰 배경, 보더, 회색 보조 텍스트로 보임. 확인 후 ctrl+c.
+Expected: `http://localhost:3000` 접속 시 스캐폴드 문구 표시. Ctrl+C로 종료.
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add postcss.config.mjs app/globals.css app/page.tsx
-git commit -m "$(cat <<'EOF'
-Add Tailwind 4 + neutral design tokens — own palette per spec §4.4 (no Toss/Kakao color borrowing)
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
-```
-
----
-
-## Task 0.6: shadcn/ui init + 핵심 5개 컴포넌트 추가
-
-**Files:**
-- Create: `components.json` (shadcn 자동)
-- Create: `components/ui/button.tsx`, `card.tsx`, `checkbox.tsx`, `textarea.tsx`, `input.tsx`
-- Create: `lib/utils.ts` (cn 헬퍼 — shadcn이 자동 생성)
-
-- [ ] **Step 1: shadcn 초기화 (Tailwind 4, neutral baseline)**
-
-```bash
-npx shadcn@latest init -y --base-color neutral
-```
-Expected: `components.json` 생성, `lib/utils.ts` 생성, `components/ui/` 폴더 준비.
-
-- [ ] **Step 2: 컴포넌트 5개 일괄 추가**
-
-```bash
-npx shadcn@latest add -y button card checkbox textarea input
-```
-Expected: `components/ui/`에 5개 파일 생성.
-
-- [ ] **Step 3: 빌드 확인**
+- [ ] **Step 4: 타입체크 통과 확인**
 
 ```bash
 npm run typecheck
 ```
-Expected: 에러 없음.
+Expected: 오류 없음.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: 커밋**
 
 ```bash
-git add components components.json lib/utils.ts
-git commit -m "$(cat <<'EOF'
-Add shadcn/ui base components — Button, Card, Checkbox, Textarea, Input for upcoming forms
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add app/layout.tsx app/page.tsx
+git commit -m "Bootstrap Next.js app shell — root layout + placeholder landing"
 ```
 
 ---
 
-## Task 0.7: Vitest + RTL 셋업 + 스모크 테스트
+### Task A10: Vitest 셋업 (`vitest.config.ts`, `tests/setup.ts`)
 
 **Files:**
 - Create: `vitest.config.ts`
 - Create: `tests/setup.ts`
-- Create: `tests/smoke.test.ts`
 
-- [ ] **Step 1: `vitest.config.ts` 생성**
+- [ ] **Step 1: `vitest.config.ts` 작성**
 
 ```ts
-import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
-import { fileURLToPath } from "node:url";
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: "jsdom",
-    setupFiles: ["./tests/setup.ts"],
+    environment: 'jsdom',
     globals: true,
+    setupFiles: ['./tests/setup.ts'],
+    include: ['**/*.test.{ts,tsx}'],
+    exclude: ['node_modules', '.next'],
   },
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./", import.meta.url)) },
+    alias: { '@': path.resolve(__dirname, '.') },
   },
 });
 ```
 
-- [ ] **Step 2: `tests/setup.ts` 생성 — jest-dom matcher 등록**
+- [ ] **Step 2: `tests/setup.ts` 작성**
 
 ```ts
-import "@testing-library/jest-dom/vitest";
+// jest-dom 매처(toBeInTheDocument 등) 전역 등록
+import '@testing-library/jest-dom/vitest';
 ```
 
-- [ ] **Step 3: 스모크 테스트 작성 (실패 → 통과 사이클 검증용)**
-
-```ts
-// tests/smoke.test.ts
-import { describe, it, expect } from "vitest";
-
-describe("vitest smoke", () => {
-  it("기본 산술이 동작한다", () => {
-    expect(1 + 1).toBe(2);
-  });
-});
-```
-
-- [ ] **Step 4: 테스트 실행 확인**
+- [ ] **Step 3: 빈 스위트 실행**
 
 ```bash
 npm test
 ```
-Expected: `1 passed`
+Expected: `No test files found` 경고만, 종료 코드 0 또는 1 (문제 아님). 설정 에러 없음.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: 커밋**
 
 ```bash
-git add vitest.config.ts tests
-git commit -m "$(cat <<'EOF'
-Set up Vitest + RTL with jsdom — TDD harness for personas, prompts, conflict matrix, store
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add vitest.config.ts tests/setup.ts
+git commit -m "Wire up Vitest with jsdom + testing-library/jest-dom setup"
 ```
 
 ---
 
-## Task 0.8: README · metadata · .env.example 갈아엎기
+### Task A11: shadcn/ui 셋업 (`components.json` + 기초 컴포넌트)
+
+Task C2에서 실제 UI 조립 시 재활용. 여기서는 설정 파일과 primitive 6종만 추가.
 
 **Files:**
-- Modify: `README.md` (Gemini 템플릿 잔재 → 디자인 크리틱 파트너)
-- Modify: `metadata.json` (`"New CRM"` 잔재 → 본 프로젝트)
-- Modify: `.env.example` (Anthropic 키만 명시)
+- Create: `components.json`
+- Create: `components/ui/button.tsx`
+- Create: `components/ui/card.tsx`
+- Create: `components/ui/checkbox.tsx`
+- Create: `components/ui/input.tsx`
+- Create: `components/ui/textarea.tsx`
+- Create: `components/ui/label.tsx`
 
-- [ ] **Step 1: `README.md` 새로 쓰기**
+- [ ] **Step 1: `components.json` 작성**
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+```
+
+- [ ] **Step 2: `components/ui/button.tsx` — 최소 variant**
+
+```tsx
+import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/lib/utils';
+
+const buttonVariants = cva(
+  'inline-flex items-center justify-center rounded-[var(--radius-md)] text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]',
+  {
+    variants: {
+      variant: {
+        primary: 'bg-[var(--color-accent)] text-[var(--color-accent-foreground)] hover:bg-[var(--color-accent-hover)]',
+        outline: 'border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:bg-[var(--color-subtle)]',
+        ghost: 'hover:bg-[var(--color-subtle)] text-[var(--color-text-primary)]',
+      },
+      size: {
+        md: 'h-10 px-4',
+        lg: 'h-12 px-6 text-base',
+      },
+    },
+    defaultVariants: { variant: 'primary', size: 'md' },
+  }
+);
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, ...props }, ref) => (
+    <button ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props} />
+  )
+);
+Button.displayName = 'Button';
+```
+
+- [ ] **Step 3: `components/ui/card.tsx`**
+
+```tsx
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+
+export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        'rounded-[var(--radius-lg)] border bg-[var(--color-surface)] p-5 shadow-sm',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 className={cn('text-base font-semibold', className)} {...props} />;
+}
+
+export function CardBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]', className)} {...props} />;
+}
+```
+
+- [ ] **Step 4: `components/ui/checkbox.tsx`**
+
+```tsx
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+
+export const Checkbox = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(({ className, ...props }, ref) => (
+  <input
+    ref={ref}
+    type="checkbox"
+    className={cn(
+      'h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-accent)]',
+      className
+    )}
+    {...props}
+  />
+));
+Checkbox.displayName = 'Checkbox';
+```
+
+- [ ] **Step 5: `components/ui/input.tsx` + `textarea.tsx` + `label.tsx`**
+
+`components/ui/input.tsx`:
+
+```tsx
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+
+export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+  ({ className, ...props }, ref) => (
+    <input
+      ref={ref}
+      className={cn(
+        'h-10 w-full rounded-[var(--radius-md)] border bg-[var(--color-surface)] px-3 text-sm placeholder:text-[var(--color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]',
+        className
+      )}
+      {...props}
+    />
+  )
+);
+Input.displayName = 'Input';
+```
+
+`components/ui/textarea.tsx`:
+
+```tsx
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+
+export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  ({ className, ...props }, ref) => (
+    <textarea
+      ref={ref}
+      className={cn(
+        'min-h-[80px] w-full rounded-[var(--radius-md)] border bg-[var(--color-surface)] px-3 py-2 text-sm placeholder:text-[var(--color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]',
+        className
+      )}
+      {...props}
+    />
+  )
+);
+Textarea.displayName = 'Textarea';
+```
+
+`components/ui/label.tsx`:
+
+```tsx
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+
+export const Label = React.forwardRef<HTMLLabelElement, React.LabelHTMLAttributes<HTMLLabelElement>>(
+  ({ className, ...props }, ref) => (
+    <label
+      ref={ref}
+      className={cn('text-sm font-medium text-[var(--color-text-primary)]', className)}
+      {...props}
+    />
+  )
+);
+Label.displayName = 'Label';
+```
+
+- [ ] **Step 6: 타입체크**
+
+```bash
+npm run typecheck
+```
+Expected: 오류 없음.
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add components.json components/ui
+git commit -m "Add shadcn config + 6 UI primitives (button/card/checkbox/input/textarea/label) — neutral tokens"
+```
+
+---
+
+### Task A12: `README.md` 갈아엎기
+
+**Files:**
+- Rewrite: `README.md`
+
+- [ ] **Step 1: 새 README 작성**
 
 ```markdown
 # 디자인 크리틱 파트너
 
-포트폴리오 완성작을 들고 온 디자이너에게, 6명의 회사 스타일 페르소나가 면접·리뷰에서 받을 만한 질문과 피드백을 주는 웹 앱. 자기 어필이 어려운 한국 프로덕트 디자이너를 위한 자기 표현의 리허설.
+> 완성작 들고 와요. 6명이 봐줍니다.
 
-## 개발 환경
+포트폴리오 스크린샷을 올리면 6인의 "○○ 스타일" 페르소나(토스 PO / 당근 PD / 카카오 센터장 / 네이버 PD / 라인 PM / 우아한 CBO)가 면접·리뷰에서 받을 만한 질문과 피드백을 준다. 강한 충돌 쌍에는 "당신은 어느 쪽?" 입력칸이 떠서 자기 표현의 리허설이 된다.
+
+**디스클레이머**: 각 회사의 공개된 디자인 철학과 블로그/컨퍼런스 발언을 기반으로 재구성한 가상의 페르소나입니다. 실제 해당 회사 또는 직원의 의견을 대변하지 않습니다.
+
+## 개발
 
 ```bash
+# 1. 의존성 설치
 npm install
-cp .env.example .env.local   # ANTHROPIC_API_KEY 채우기
-npm run dev                  # http://localhost:3000
+
+# 2. .env 셋업 — ANTHROPIC_API_KEY 채우기
+cp .env.example .env
+
+# 3. dev 서버
+npm run dev
+# → http://localhost:3000
 ```
 
 ## 스크립트
 
-| 명령 | 설명 |
+| 명령 | 역할 |
 |---|---|
-| `npm run dev` | 개발 서버 |
+| `npm run dev` | 개발 서버 (Next.js, 포트 3000) |
 | `npm run build` | 프로덕션 빌드 |
-| `npm test` | Vitest 단위 테스트 |
-| `npm run typecheck` | 타입 체크 |
+| `npm run start` | 프로덕션 서버 |
+| `npm run typecheck` | TypeScript 체크 |
+| `npm test` | Vitest 전체 실행 |
+| `npm run test:watch` | Vitest 워치 모드 |
+
+## 기술 스택
+
+- Next.js 15 (App Router) + React 19 + TypeScript
+- Tailwind CSS 4 + shadcn/ui (중립 색상만 — 회사 브랜드 컬러 차용 금지)
+- `@anthropic-ai/sdk` (서버 사이드만, `/api/critique`)
+- Zustand (클라이언트 상태)
+- Vitest + @testing-library/react (테스트)
+
+## 배포
+
+Vercel 권장. 환경변수 `ANTHROPIC_API_KEY`만 설정하면 됨.
 
 ## 문서
 
-- Spec: `docs/specs/2026-04-16-design-critique-partner-spec.md`
+- Spec: `docs/specs/2026-04-16-design-critique-partner-spec.md` (단일 진실)
 - Plan: `docs/plans/2026-04-17-design-critique-partner-plan.md`
-- 레거시 참고 자료 (CRM 시절): `docs/legacy/`
-
-## 디스클레이머
-
-각 페르소나는 회사의 공개된 디자인 철학·블로그·컨퍼런스 발언을 기반으로 재구성한 가상의 인물입니다. 실제 해당 회사 또는 직원의 의견을 대변하지 않습니다.
+- Legacy: `docs/legacy/` (이전 디자인 토큰·스타일 가이드 참고용)
 ```
 
-- [ ] **Step 2: `metadata.json` 새로 쓰기**
-
-```json
-{
-  "name": "design-critique-partner",
-  "description": "6명의 회사 스타일 페르소나가 디자인 크리틱과 충돌 관점, 자기 표현 리허설을 주는 웹 앱",
-  "version": "0.1.0"
-}
-```
-
-- [ ] **Step 3: `.env.example` 정리 (Anthropic 키만)**
+- [ ] **Step 2: 커밋**
 
 ```bash
-# .env.example
-# Claude API 키. 서버 사이드(Next.js Route Handler)에서만 사용.
-# 절대 NEXT_PUBLIC_ 접두사 붙이지 말 것 — 클라이언트 번들에 노출됨.
-ANTHROPIC_API_KEY=
-```
-
-- [ ] **Step 4: `.env`가 `.gitignore`로 보호되는지 재확인**
-
-```bash
-grep -E '^\.env' .gitignore
-```
-Expected: `.env*` 또는 `.env` + `!.env.example` 패턴 존재.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add README.md metadata.json .env.example
-git commit -m "$(cat <<'EOF'
-Rewrite README/metadata/.env.example — replace Gemini and CRM template residue with project identity
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add README.md
+git commit -m "Rewrite README — replace Gemini template with design-critique-partner overview + scripts"
 ```
 
 ---
 
-## Task 0.9: Zustand 클라이언트 스토어 + 테스트
+### Task A13: `.env.example` 보강 (APP_URL 주석 정리)
 
-> 5단계 사이에 들고 다닐 상태: 업로드된 이미지(base64 배열), 맥락 4질문 답, 선택된 페르소나 ID 배열, STEP 5 리허설 입력 맵. sessionStorage로 새로고침 보호.
+현 파일은 OK이지만 `APP_URL` 불필요. Next.js는 `VERCEL_URL` 등 내장 값을 사용. 정리.
 
 **Files:**
-- Create: `lib/store.ts`
-- Create: `lib/store.test.ts`
+- Modify: `.env.example`
 
-- [ ] **Step 1: 실패 테스트 먼저 — `lib/store.test.ts`**
+- [ ] **Step 1: 새 내용**
 
-```ts
-import { describe, it, expect, beforeEach } from "vitest";
-import { useFlowStore } from "./store";
-
-describe("useFlowStore", () => {
-  beforeEach(() => {
-    useFlowStore.getState().reset();
-  });
-
-  it("초기 상태는 빈 값", () => {
-    const s = useFlowStore.getState();
-    expect(s.images).toEqual([]);
-    expect(s.context).toEqual({ kind: "", problem: "", role: "", proud: "" });
-    expect(s.selectedPersonaIds).toEqual([]);
-    expect(s.rehearsalAnswers).toEqual({});
-  });
-
-  it("setImages로 이미지를 저장한다", () => {
-    useFlowStore.getState().setImages([{ name: "a.png", dataUrl: "data:..." }]);
-    expect(useFlowStore.getState().images).toHaveLength(1);
-  });
-
-  it("setRehearsalAnswer는 키별로 답을 누적한다", () => {
-    useFlowStore.getState().setRehearsalAnswer("toss-po-x-woowa-cbo", "전환율");
-    useFlowStore.getState().setRehearsalAnswer("toss-po-x-kakao-dc", "지금");
-    expect(useFlowStore.getState().rehearsalAnswers).toEqual({
-      "toss-po-x-woowa-cbo": "전환율",
-      "toss-po-x-kakao-dc": "지금",
-    });
-  });
-});
+```
+# ANTHROPIC_API_KEY: Claude API 호출에 필요합니다 (서버 사이드 전용).
+# 절대 클라이언트 번들에 노출 금지. NEXT_PUBLIC_* 접두사 사용 금지.
+# Anthropic Console(https://console.anthropic.com)에서 발급받은 키를 입력하세요.
+ANTHROPIC_API_KEY="YOUR_ANTHROPIC_API_KEY"
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [ ] **Step 2: 커밋**
 
 ```bash
-npm test -- lib/store.test.ts
-```
-Expected: FAIL — `Cannot find module './store'`
-
-- [ ] **Step 3: `lib/store.ts` 구현**
-
-```ts
-/**
- * Role: 5단계 플로우 사이의 클라이언트 상태 — 이미지·맥락답·페르소나선택·리허설입력
- * Key Features: Zustand + persist(sessionStorage). 새로고침 보호. DB 없음.
- * Dependencies: zustand
- * Notes: 모든 상태는 클라이언트 한정. 서버로 가는 건 /api/critique 호출 시 명시적으로만.
- */
-import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-
-export type UploadedImage = { name: string; dataUrl: string };
-
-export type ContextAnswers = {
-  kind: string;       // 객관식 — 작업 종류
-  problem: string;    // 자유 — 핵심 문제 (50자 이내 권장)
-  role: string;       // 객관식 — 본인 역할
-  proud: string;      // 자유 옵션 — 자랑하고 싶은 결정
-};
-
-type FlowState = {
-  images: UploadedImage[];
-  context: ContextAnswers;
-  selectedPersonaIds: string[];
-  rehearsalAnswers: Record<string, string>; // key: `${pA}-x-${pB}` (id 정렬), value: 사용자 답
-
-  setImages: (i: UploadedImage[]) => void;
-  setContext: (c: Partial<ContextAnswers>) => void;
-  setSelectedPersonaIds: (ids: string[]) => void;
-  setRehearsalAnswer: (conflictKey: string, answer: string) => void;
-  reset: () => void;
-};
-
-const initialState = {
-  images: [] as UploadedImage[],
-  context: { kind: "", problem: "", role: "", proud: "" } as ContextAnswers,
-  selectedPersonaIds: [] as string[],
-  rehearsalAnswers: {} as Record<string, string>,
-};
-
-export const useFlowStore = create<FlowState>()(
-  persist(
-    (set) => ({
-      ...initialState,
-      setImages: (images) => set({ images }),
-      setContext: (c) => set((s) => ({ context: { ...s.context, ...c } })),
-      setSelectedPersonaIds: (selectedPersonaIds) => set({ selectedPersonaIds }),
-      setRehearsalAnswer: (key, answer) =>
-        set((s) => ({ rehearsalAnswers: { ...s.rehearsalAnswers, [key]: answer } })),
-      reset: () => set({ ...initialState }),
-    }),
-    {
-      name: "design-critique-flow",
-      storage: createJSONStorage(() => sessionStorage),
-    }
-  )
-);
-```
-
-- [ ] **Step 4: 테스트 통과 확인**
-
-```bash
-npm test -- lib/store.test.ts
-```
-Expected: 3 passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/store.ts lib/store.test.ts
-git commit -m "$(cat <<'EOF'
-Add Zustand flow store — carry images, context answers, selected personas, rehearsal text across STEP 1-5
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add .env.example
+git commit -m "Trim .env.example — drop APP_URL, add server-side-only warning for API key"
 ```
 
 ---
 
-# Phase 1 — Persona 데이터 레이어
-
-순수 데이터·로직. 이 phase가 끝나면 페르소나 6인, system prompt 빌드, 충돌 룩업이 모두 단위 테스트로 보호된다.
-
-## Task 1.1: `Persona` 타입 + 6인 데이터 + shape 테스트
-
-**Files:**
-- Create: `lib/personas.ts`
-- Create: `lib/personas.test.ts`
-
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```ts
-// lib/personas.test.ts
-import { describe, it, expect } from "vitest";
-import { PERSONAS, PERSONA_IDS } from "./personas";
-
-describe("PERSONAS", () => {
-  it("정확히 6명이다", () => {
-    expect(PERSONAS).toHaveLength(6);
-  });
-
-  it("ID 6개가 spec §2.1 매핑과 일치한다", () => {
-    expect(PERSONA_IDS).toEqual([
-      "toss-po", "daangn-spd", "kakao-dc", "naver-spd", "line-pm", "woowa-cbo",
-    ]);
-  });
-
-  it("모든 페르소나가 필수 필드를 가진다", () => {
-    for (const p of PERSONAS) {
-      expect(p.id).toBeTruthy();
-      expect(p.label).toContain("스타일");           // 풀이 2 규칙: '○○ 스타일'
-      expect(p.firstLens).toBeTruthy();
-      expect(p.questionDomain).toBeTruthy();
-      expect(p.sampleQuestion).toBeTruthy();
-      expect(p.nonNegotiables.length).toBeGreaterThan(0);
-      expect(p.tradeoffs.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("ID는 모두 유니크", () => {
-    const ids = PERSONAS.map((p) => p.id);
-    expect(new Set(ids).size).toBe(6);
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
+**Phase A 검증 체크포인트**
 
 ```bash
-npm test -- lib/personas.test.ts
+npm run typecheck && npm test && npm run build
 ```
-Expected: FAIL — `Cannot find module './personas'`
+Expected: typecheck OK, test 통과 (스위트 비어 있음 OK), build 성공. 로컬 dev 서버에서 `/`가 스캐폴드 문구 노출.
 
-- [ ] **Step 3: `lib/personas.ts` 구현**
+---
+
+# Phase B — 도메인 로직 + API Route
+
+## TDD 원칙
+
+이 페이즈는 **풀 TDD**: 모든 순수 함수·데이터 검증은 테스트 먼저, 구현 그다음. 작성 순서 = 실패하는 테스트 → 실행으로 실패 확인 → 최소 구현 → 통과 확인 → 커밋.
+
+API Route는 **모킹 통합 테스트**: `@anthropic-ai/sdk`를 모킹하고 Route handler를 직접 호출해 검증.
+
+---
+
+### Task B1: `lib/personas/types.ts` — Persona 타입 정의
+
+순수 타입 파일. 테스트 없음 (런타임 동작 없음). B2 이후 구현의 기준.
+
+**Files:**
+- Create: `lib/personas/types.ts`
+
+- [ ] **Step 1: 타입 작성**
 
 ```ts
 /**
- * Role: 6명의 페르소나 정의 — 회사 스타일 라벨 + 핵심 렌즈 + 질문 영역 + 비양보/양보 항목
- * Key Features: spec §2.1·§2.2 박제. UI는 label만 노출하고 회사 로고/색/폰트는 차용 금지.
- * Dependencies: 없음 (순수 데이터)
- * Notes: systemPrompt 본문은 별도 lib/prompts.ts의 빌더에서 합성. 여기는 raw 재료만.
+ * Role: Persona 도메인 타입 정의
+ * Key Features: 6인 ID 리터럴 유니언, Persona 객체 스키마
+ * Dependencies: 없음
+ * Notes: spec §2.1 / §2.3 참조. 페르소나 추가/삭제 시 PersonaId 먼저 수정
  */
+
+export type PersonaId =
+  | 'toss-po'
+  | 'daangn-pd'
+  | 'kakao-dc'
+  | 'naver-pd'
+  | 'line-pm'
+  | 'woowa-cbo';
+
+export const PERSONA_IDS: readonly PersonaId[] = [
+  'toss-po',
+  'daangn-pd',
+  'kakao-dc',
+  'naver-pd',
+  'line-pm',
+  'woowa-cbo',
+] as const;
 
 export type Persona = {
-  id: string;
-  label: string;            // "토스 스타일 PO" — 풀이 2
-  firstLens: string;        // 핵심 렌즈
+  id: PersonaId;
+  label: string;            // "토스 스타일 PO"
+  firstLens: string;        // 핵심 렌즈 (spec §2.1)
   questionDomain: string;   // 디자이너에게 던지는 질문 영역
-  sampleQuestion: string;   // 대표 질문
   nonNegotiables: string[]; // 절대 양보 안 하는 것
   tradeoffs: string[];      // 양보 가능한 것
+  representativeQuestion: string; // 대표 질문 (spec §2.1)
 };
+```
 
-export const PERSONAS: Persona[] = [
-  {
-    id: "toss-po",
-    label: "토스 스타일 PO",
-    firstLens: "숫자 · 한 액션",
-    questionDomain: "시각적 위계 · 시선 흐름 · 단일 액션 강조",
-    sampleQuestion: "이 화면에서 사용자 시선이 가장 먼저 가는 곳이 어디야?",
-    nonNegotiables: ["가장 중요한 한 액션이 시각적으로 압도적이어야 한다", "시선 흐름이 측정 가능해야 한다"],
-    tradeoffs: ["여백의 정서", "장기 일관성"],
+- [ ] **Step 2: 타입체크**
+
+```bash
+npm run typecheck
+```
+Expected: 오류 없음.
+
+- [ ] **Step 3: 커밋**
+
+```bash
+git add lib/personas/types.ts
+git commit -m "Add Persona type — 6 IDs + schema per spec §2.1/§2.3"
+```
+
+---
+
+### Task B2: `lib/personas/definitions.ts` — 6인 데이터 (TDD)
+
+**Files:**
+- Create: `lib/personas/definitions.test.ts`
+- Create: `lib/personas/definitions.ts`
+
+- [ ] **Step 1: 실패하는 테스트 작성**
+
+```ts
+// lib/personas/definitions.test.ts
+import { describe, it, expect } from 'vitest';
+import { PERSONAS } from './definitions';
+import { PERSONA_IDS } from './types';
+
+describe('PERSONAS', () => {
+  it('6명 전원 정의됨', () => {
+    expect(Object.keys(PERSONAS)).toHaveLength(6);
+  });
+
+  it('PERSONA_IDS 순서대로 모든 id 존재', () => {
+    for (const id of PERSONA_IDS) {
+      expect(PERSONAS[id]).toBeDefined();
+      expect(PERSONAS[id].id).toBe(id);
+    }
+  });
+
+  it('각 페르소나는 "○○ 스타일" 접미사 붙은 label을 가진다 (spec 풀이 2)', () => {
+    for (const id of PERSONA_IDS) {
+      expect(PERSONAS[id].label).toMatch(/스타일/);
+    }
+  });
+
+  it('각 페르소나는 nonNegotiables와 tradeoffs를 최소 1개 이상 가진다', () => {
+    for (const id of PERSONA_IDS) {
+      expect(PERSONAS[id].nonNegotiables.length).toBeGreaterThan(0);
+      expect(PERSONAS[id].tradeoffs.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('토스 PO 대표 질문은 시선 흐름 관련', () => {
+    expect(PERSONAS['toss-po'].representativeQuestion).toContain('시선');
+  });
+
+  it('당근 PD 대표 질문은 읽힘/접근성 관련', () => {
+    expect(PERSONAS['daangn-pd'].representativeQuestion).toMatch(/읽|엄마/);
+  });
+});
+```
+
+- [ ] **Step 2: 실행해서 FAIL 확인**
+
+```bash
+npx vitest run lib/personas/definitions.test.ts
+```
+Expected: FAIL — `Cannot find module './definitions'`.
+
+- [ ] **Step 3: 최소 구현 작성**
+
+```ts
+// lib/personas/definitions.ts
+/**
+ * Role: 6인 페르소나 데이터 (spec §2.1)
+ * Key Features: PERSONAS 객체 = PersonaId → Persona 매핑
+ * Dependencies: ./types
+ * Notes: 회사 실명 × 직군 (풀이 2: "○○ 스타일" 접미사 필수)
+ */
+import type { Persona, PersonaId } from './types';
+
+export const PERSONAS: Record<PersonaId, Persona> = {
+  'toss-po': {
+    id: 'toss-po',
+    label: '토스 스타일 PO',
+    firstLens: '숫자 · 한 액션',
+    questionDomain: '시각적 위계 · 시선 흐름 · 단일 액션 강조',
+    nonNegotiables: ['한 화면 한 주요 액션', '시각적 위계가 명확한 CTA'],
+    tradeoffs: ['정보 밀도', '브랜드 감성 여백'],
+    representativeQuestion: '이 화면에서 사용자 시선이 가장 먼저 가는 곳이 어디야?',
   },
-  {
-    id: "daangn-spd",
-    label: "당근 스타일 시니어 PD",
-    firstLens: "생활 맥락 · 로컬",
-    questionDomain: "글자 크기 · 친숙한 메타포 · 비전문가 접근성",
-    sampleQuestion: "우리 엄마 핸드폰에서 이 글자가 읽힐까?",
-    nonNegotiables: ["비전문가가 망설임 없이 따라올 수 있어야 한다", "동네 맥락 단어를 쓴다"],
-    tradeoffs: ["글로벌 보편성", "세련된 미감"],
+  'daangn-pd': {
+    id: 'daangn-pd',
+    label: '당근 스타일 시니어 PD',
+    firstLens: '생활 맥락 · 로컬',
+    questionDomain: '글자 크기 · 친숙한 메타포 · 비전문가 접근성',
+    nonNegotiables: ['비전문가도 이해할 단어', '작은 글씨가 읽힘'],
+    tradeoffs: ['글로벌 보편성', '세련된 마이크로카피'],
+    representativeQuestion: '우리 엄마 핸드폰에서 이 글자가 읽힐까?',
   },
-  {
-    id: "kakao-dc",
-    label: "카카오 스타일 디자인 센터장",
-    firstLens: "시스템 · 장기 일관성",
-    questionDomain: "컴포넌트 재사용성 · 토큰 일관성 · 패턴 확장성",
-    sampleQuestion: "이 컴포넌트가 다른 화면에서도 같은 모양으로 등장해?",
-    nonNegotiables: ["같은 의미는 같은 컴포넌트로 표현되어야 한다", "토큰 위반은 디자인 부채다"],
-    tradeoffs: ["이번 분기 지표", "한 화면의 임팩트"],
+  'kakao-dc': {
+    id: 'kakao-dc',
+    label: '카카오 스타일 디자인 센터장',
+    firstLens: '시스템 · 장기 일관성',
+    questionDomain: '컴포넌트 재사용성 · 토큰 일관성 · 패턴 확장성',
+    nonNegotiables: ['토큰 밖으로 탈주하는 값 없음', '컴포넌트가 다른 화면에서도 동일'],
+    tradeoffs: ['단기 전환율', '화면 개별 최적화'],
+    representativeQuestion: '이 컴포넌트가 다른 화면에서도 같은 모양으로 등장해?',
   },
-  {
-    id: "naver-spd",
-    label: "네이버 스타일 시니어 PD",
-    firstLens: "정보 위계 · 밀도",
-    questionDomain: "타이포 위계 · 그룹핑 · 정보 밀도 · 마이크로카피",
-    sampleQuestion: "버튼 위 가장 마지막으로 읽히는 텍스트가 뭐야?",
-    nonNegotiables: ["사용자가 한 번에 처리할 정보의 묶음이 명확해야 한다", "마이크로카피는 군더더기 없이"],
-    tradeoffs: ["감성 여백", "단일 액션 강조"],
+  'naver-pd': {
+    id: 'naver-pd',
+    label: '네이버 스타일 시니어 PD',
+    firstLens: '정보 위계 · 밀도',
+    questionDomain: '타이포 위계 · 그룹핑 · 정보 밀도 · 마이크로카피',
+    nonNegotiables: ['읽기 순서가 명확', '중요 정보 위계 유지'],
+    tradeoffs: ['감성 여백', '단일 액션 강조'],
+    representativeQuestion: '버튼 위 가장 마지막으로 읽히는 텍스트가 뭐야?',
   },
-  {
-    id: "line-pm",
-    label: "라인 스타일 글로벌 PM",
-    firstLens: "보편성 · 로컬라이제이션",
-    questionDomain: "다국어 길이 변동 · 문화 중립 아이콘 · RTL 호환",
-    sampleQuestion: "이 텍스트가 일본어로 1.5배 길어져도 깨지지 않아?",
-    nonNegotiables: ["언어 길이 변동·RTL에서도 레이아웃이 무너지지 않아야 한다", "문화 의존 메타포는 검증 후"],
-    tradeoffs: ["한국 특유의 정서", "동네 맥락 단어"],
+  'line-pm': {
+    id: 'line-pm',
+    label: '라인 스타일 글로벌 PM',
+    firstLens: '보편성 · 로컬라이제이션',
+    questionDomain: '다국어 길이 변동 · 문화 중립 아이콘 · RTL 호환',
+    nonNegotiables: ['다국어 길이 1.5배에도 안 깨짐', '문화 중립 아이콘'],
+    tradeoffs: ['로컬 맥락 뉘앙스', '한국적 감성 표현'],
+    representativeQuestion: '이 텍스트가 일본어로 1.5배 길어져도 깨지지 않아?',
   },
-  {
-    id: "woowa-cbo",
-    label: "우아한형제들 스타일 CBO",
-    firstLens: "감성 · 브랜드 톤",
-    questionDomain: "마이크로 인터랙션 · 컬러 톤 · '기분 좋은 순간'",
-    sampleQuestion: "이 화면에서 기분 좋은 순간은 어디야?",
-    nonNegotiables: ["사용자가 '아 좋다'라고 느낄 한 순간이 있어야 한다", "브랜드 톤이 기능 사이로 새어 나와야 한다"],
-    tradeoffs: ["정보 밀도", "측정 가능한 전환율"],
+  'woowa-cbo': {
+    id: 'woowa-cbo',
+    label: '우아한 스타일 CBO',
+    firstLens: '감성 · 브랜드 톤',
+    questionDomain: '마이크로 인터랙션 · 컬러 톤 · "기분 좋은 순간"',
+    nonNegotiables: ['브랜드 톤이 사라지지 않음', '기분 좋은 순간 하나'],
+    tradeoffs: ['정보 밀도', '문화 중립성'],
+    representativeQuestion: '이 화면에서 기분 좋은 순간은 어디야?',
   },
+};
+```
+
+- [ ] **Step 4: 실행해서 PASS 확인**
+
+```bash
+npx vitest run lib/personas/definitions.test.ts
+```
+Expected: PASS (6 tests).
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add lib/personas/definitions.ts lib/personas/definitions.test.ts
+git commit -m "Add 6 personas data — spec §2.1 table encoded + tests guard '○○ 스타일' suffix"
+```
+
+---
+
+### Task B3: `lib/conflict/matrix.ts` — 6×6 매트릭스 (TDD)
+
+**Files:**
+- Create: `lib/conflict/matrix.test.ts`
+- Create: `lib/conflict/matrix.ts`
+
+- [ ] **Step 1: 실패하는 테스트 작성**
+
+```ts
+// lib/conflict/matrix.test.ts
+import { describe, it, expect } from 'vitest';
+import { CONFLICT_MATRIX, getConflictLevel } from './matrix';
+import { PERSONA_IDS } from '@/lib/personas/types';
+
+describe('CONFLICT_MATRIX', () => {
+  it('강한 충돌 5쌍은 strong (spec §3.1)', () => {
+    expect(getConflictLevel('toss-po', 'woowa-cbo')).toBe('strong');   // 1↔6
+    expect(getConflictLevel('toss-po', 'kakao-dc')).toBe('strong');    // 1↔3
+    expect(getConflictLevel('daangn-pd', 'line-pm')).toBe('strong');   // 2↔5
+    expect(getConflictLevel('naver-pd', 'woowa-cbo')).toBe('strong');  // 4↔6
+    expect(getConflictLevel('line-pm', 'woowa-cbo')).toBe('strong');   // 5↔6
+  });
+
+  it('대칭 행렬 (a→b === b→a)', () => {
+    for (const a of PERSONA_IDS) {
+      for (const b of PERSONA_IDS) {
+        expect(getConflictLevel(a, b)).toBe(getConflictLevel(b, a));
+      }
+    }
+  });
+
+  it('자기 자신과는 none (대각선)', () => {
+    for (const id of PERSONA_IDS) {
+      expect(getConflictLevel(id, id)).toBe('none');
+    }
+  });
+
+  it('중간 충돌 샘플: 1↔2 medium, 3↔4 none', () => {
+    expect(getConflictLevel('toss-po', 'daangn-pd')).toBe('medium');
+    expect(getConflictLevel('kakao-dc', 'naver-pd')).toBe('none');
+  });
+});
+```
+
+- [ ] **Step 2: FAIL 확인**
+
+```bash
+npx vitest run lib/conflict/matrix.test.ts
+```
+Expected: FAIL — `Cannot find module './matrix'`.
+
+- [ ] **Step 3: 구현**
+
+```ts
+// lib/conflict/matrix.ts
+/**
+ * Role: 6×6 페르소나 충돌 매트릭스 (spec §3.1)
+ * Key Features: 대칭 행렬, 레벨 lookup 함수
+ * Dependencies: @/lib/personas/types
+ * Notes: strong 5쌍 (§3.2)은 STEP 5 카드 후보. symmetric 유지가 불변식
+ */
+import type { PersonaId } from '@/lib/personas/types';
+
+export type ConflictLevel = 'strong' | 'medium' | 'none';
+
+// strong 5쌍 (§3.1/§3.2)
+const STRONG: Array<[PersonaId, PersonaId]> = [
+  ['toss-po', 'kakao-dc'],
+  ['toss-po', 'woowa-cbo'],
+  ['daangn-pd', 'line-pm'],
+  ['naver-pd', 'woowa-cbo'],
+  ['line-pm', 'woowa-cbo'],
 ];
 
-export const PERSONA_IDS = PERSONAS.map((p) => p.id);
+// medium (§3.1 🟡)
+const MEDIUM: Array<[PersonaId, PersonaId]> = [
+  ['toss-po', 'daangn-pd'],
+  ['toss-po', 'naver-pd'],
+  ['daangn-pd', 'kakao-dc'],
+  ['daangn-pd', 'naver-pd'],
+  ['kakao-dc', 'line-pm'],
+  ['kakao-dc', 'woowa-cbo'],
+];
 
-export function getPersonaById(id: string): Persona | undefined {
-  return PERSONAS.find((p) => p.id === id);
+function keyOf(a: PersonaId, b: PersonaId): string {
+  return [a, b].sort().join('|');
 }
+
+const LEVEL_BY_KEY = new Map<string, ConflictLevel>();
+for (const [a, b] of STRONG) LEVEL_BY_KEY.set(keyOf(a, b), 'strong');
+for (const [a, b] of MEDIUM) LEVEL_BY_KEY.set(keyOf(a, b), 'medium');
+
+export function getConflictLevel(a: PersonaId, b: PersonaId): ConflictLevel {
+  if (a === b) return 'none';
+  return LEVEL_BY_KEY.get(keyOf(a, b)) ?? 'none';
+}
+
+// 디버깅·검증 편의용 (테스트에서 직접 키를 돌 때 사용 가능)
+export const CONFLICT_MATRIX = { STRONG, MEDIUM };
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [ ] **Step 4: PASS 확인**
 
 ```bash
-npm test -- lib/personas.test.ts
+npx vitest run lib/conflict/matrix.test.ts
 ```
-Expected: 4 passed.
+Expected: PASS (4 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 커밋**
 
 ```bash
-git add lib/personas.ts lib/personas.test.ts
-git commit -m "$(cat <<'EOF'
-Add Persona type + 6 personas data — spec §2.1 mapping with label/firstLens/questionDomain/non-negotiables
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add lib/conflict
+git commit -m "Add 6×6 conflict matrix + getConflictLevel — strong/medium pairs per spec §3.1"
 ```
 
 ---
 
-## Task 1.2: System prompt 빌더 + 테스트
-
-> spec §4.5(공통 톤) + §4.4(7원칙) + §4.3(가드레일 200자 + 디자이너 언어) + §2.1(페르소나별 영역) 합성. 출력은 Anthropic system 메시지 콘텐츠 블록 배열로 — 첫 블록(공통 톤·7원칙·가드레일)은 `cache_control: ephemeral`로 캐싱, 두 번째 블록(페르소나 고유)도 캐싱.
+### Task B4: `lib/conflict/themes.ts` — 강한 충돌 5쌍 테마 (TDD)
 
 **Files:**
-- Create: `lib/prompts.ts`
-- Create: `lib/prompts.test.ts`
+- Create: `lib/conflict/themes.test.ts`
+- Create: `lib/conflict/themes.ts`
 
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```ts
-// lib/prompts.test.ts
-import { describe, it, expect } from "vitest";
-import { buildSystemPrompt, COMMON_TONE_BLOCK, buildUserPrompt } from "./prompts";
-import { getPersonaById } from "./personas";
-
-describe("buildSystemPrompt", () => {
-  it("두 개의 캐시된 텍스트 블록을 반환한다", () => {
-    const tossPo = getPersonaById("toss-po")!;
-    const blocks = buildSystemPrompt(tossPo);
-    expect(blocks).toHaveLength(2);
-    for (const b of blocks) {
-      expect(b.type).toBe("text");
-      expect(b.cache_control).toEqual({ type: "ephemeral" });
-    }
-  });
-
-  it("첫 블록은 공통 톤·7원칙·가드레일을 모두 포함", () => {
-    const tossPo = getPersonaById("toss-po")!;
-    const [common] = buildSystemPrompt(tossPo);
-    expect(common.text).toContain("디자이너 언어");
-    expect(common.text).toContain("크리틱은 판결이 아니라 대화");
-    expect(common.text).toContain("질문에 무게중심");
-    expect(common.text).toContain("200자");      // 가드레일 §4.3
-    expect(common.text).toContain("한 줄 진단");
-  });
-
-  it("두 번째 블록은 해당 페르소나의 라벨·렌즈·영역·대표질문을 포함", () => {
-    const woowa = getPersonaById("woowa-cbo")!;
-    const [, persona] = buildSystemPrompt(woowa);
-    expect(persona.text).toContain("우아한형제들 스타일 CBO");
-    expect(persona.text).toContain("감성 · 브랜드 톤");
-    expect(persona.text).toContain("기분 좋은 순간");
-  });
-});
-
-describe("COMMON_TONE_BLOCK", () => {
-  it("회사 머릿속 비즈니스 언어 금지를 명시", () => {
-    expect(COMMON_TONE_BLOCK).toContain("전환율");
-    expect(COMMON_TONE_BLOCK).toContain("MAU");
-  });
-});
-
-describe("buildUserPrompt", () => {
-  it("맥락 4질문을 모두 포함한다", () => {
-    const text = buildUserPrompt({
-      kind: "실무 출시작",
-      problem: "약관 동의 화면 가독성",
-      role: "PD 단독",
-      proud: "필수/선택 그룹화",
-    });
-    expect(text).toContain("실무 출시작");
-    expect(text).toContain("약관 동의 화면 가독성");
-    expect(text).toContain("PD 단독");
-    expect(text).toContain("필수/선택 그룹화");
-  });
-
-  it("자랑하고 싶은 결정이 비어있어도 깨지지 않는다", () => {
-    const text = buildUserPrompt({
-      kind: "사이드 프로젝트",
-      problem: "x",
-      role: "기타",
-      proud: "",
-    });
-    expect(text).toContain("사이드 프로젝트");
-    expect(text).not.toContain("자랑하고 싶은 결정: \n");  // 빈 값 누락 처리
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- lib/prompts.test.ts
-```
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: `lib/prompts.ts` 구현**
+- [ ] **Step 1: 실패하는 테스트 작성**
 
 ```ts
-/**
- * Role: Claude 호출용 system / user 프롬프트 빌더 — spec §4.3·§4.4·§4.5 합성
- * Key Features: 두 개의 캐시 블록(공통 톤+7원칙+가드레일 / 페르소나 고유). 디자이너 언어 강제.
- * Dependencies: lib/personas (Persona 타입)
- * Notes: 출력 가드레일(200자, 한 줄 진단 40자, 질문 50자, 제안 80자)은 system에 박제.
- *        사용자가 자유롭게 답하면 빈 필드는 프롬프트에서 누락한다 (모델 혼란 방지).
- */
-import type { Persona } from "./personas";
-import type { ContextAnswers } from "./store";
+// lib/conflict/themes.test.ts
+import { describe, it, expect } from 'vitest';
+import { CONFLICT_THEMES, getThemeForPair } from './themes';
 
-export const COMMON_TONE_BLOCK = `당신은 한국의 시니어 프로덕트 디자인 동료입니다. 디자이너가 완성된 작업을 포트폴리오로 들고 와서 보여줄 때, 면접·포트폴리오 리뷰어의 시선으로 봅니다. 회의실 동료가 아니라 첫 만남의 리뷰어입니다.
-
-# 7가지 원칙
-1. 크리틱은 판결이 아니라 대화다.
-2. 답이 아니라 질문에 무게중심을 둔다.
-3. 여백을 두려워하지 않는다. 침묵도 피드백이다.
-4. 회사 이름은 빌리되 로고·색·폰트는 차용하지 않는다.
-5. 디자이너에게는 디자이너 언어로 말한다.
-6. 평가가 아니라 동료의 피드백이다. 완성작이 다음 작업으로 이어지도록 본다.
-7. 자기 표현의 리허설이다. 디자이너가 자기 작업을 더 잘 이야기하게 돕는다.
-
-# 언어 변환 규칙
-당신 머릿속의 비즈니스 언어(전환율, MAU, 법적 필수, OKR 등)로 묻지 마십시오. 디자이너가 답할 수 있고 디자인 결정으로 연결되는 언어(시각적 위계, 그룹핑, 시선 흐름, 컴포넌트 일관성, 마이크로카피, 메타포 등)로 변환해서 묻습니다.
-
-# 출력 포맷 (엄격)
-다음 마크다운 구조를 그대로 사용하십시오. **카드 전체가 약 200자 이내**여야 합니다.
-
-**🩺 한 줄 진단**: (40자 이내)
-**❓ 질문**
-1. (50자 이내)
-2. (50자 이내)
-3. (50자 이내)
-**💡 제안**
-- (80자 이내)
-- (80자 이내, 옵션)
-
-자기 영역(아래 페르소나 정의의 질문 영역)을 벗어나는 주제는 다른 페르소나에게 양보하십시오. 답을 강요하지 마십시오.`;
-
-function buildPersonaBlock(p: Persona): string {
-  return `# 당신의 페르소나 — ${p.label}
-
-- 핵심 렌즈: ${p.firstLens}
-- 질문 영역: ${p.questionDomain}
-- 절대 양보 안 함: ${p.nonNegotiables.join(" / ")}
-- 양보 가능: ${p.tradeoffs.join(" / ")}
-- 대표 질문 톤 예시: "${p.sampleQuestion}"
-
-이 렌즈로만 보십시오. 다른 페르소나의 영역(예: 글로벌 PM의 다국어 길이, 카카오 센터장의 토큰 일관성)은 건드리지 마십시오.`;
-}
-
-export type SystemBlock = {
-  type: "text";
-  text: string;
-  cache_control: { type: "ephemeral" };
-};
-
-export function buildSystemPrompt(persona: Persona): SystemBlock[] {
-  return [
-    { type: "text", text: COMMON_TONE_BLOCK, cache_control: { type: "ephemeral" } },
-    { type: "text", text: buildPersonaBlock(persona), cache_control: { type: "ephemeral" } },
-  ];
-}
-
-export function buildUserPrompt(ctx: ContextAnswers): string {
-  const lines: string[] = ["다음은 디자이너가 보내준 맥락입니다.", ""];
-  lines.push(`작업 종류: ${ctx.kind}`);
-  if (ctx.problem.trim()) lines.push(`핵심 문제: ${ctx.problem.trim()}`);
-  lines.push(`본인의 역할: ${ctx.role}`);
-  if (ctx.proud.trim()) lines.push(`자랑하고 싶은 결정: ${ctx.proud.trim()}`);
-  lines.push(
-    "",
-    "첨부된 스크린샷을 당신의 페르소나 렌즈로 보고, 출력 포맷에 맞춰 한 장의 카드만 작성하십시오.",
-  );
-  return lines.join("\n");
-}
-```
-
-- [ ] **Step 4: 테스트 통과 확인**
-
-```bash
-npm test -- lib/prompts.test.ts
-```
-Expected: 5 passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/prompts.ts lib/prompts.test.ts
-git commit -m "$(cat <<'EOF'
-Add system + user prompt builders — spec §4.3-4.5 baked in, two ephemeral cache blocks per persona
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
-```
-
----
-
-## Task 1.3: 충돌 매트릭스 + `getStrongConflicts` 룩업 + 테스트
-
-> spec §3.1 6×6 매트릭스 박제, §3.2의 강한 충돌 5쌍을 데이터로 떨어트림. 룩업 함수는 STEP 3 미리보기와 STEP 5 카드 자동 트리거에 둘 다 쓰임.
-
-**Files:**
-- Create: `lib/conflicts.ts`
-- Create: `lib/conflicts.test.ts`
-
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```ts
-// lib/conflicts.test.ts
-import { describe, it, expect } from "vitest";
-import {
-  STRONG_CONFLICTS, getStrongConflicts, conflictKey,
-} from "./conflicts";
-
-describe("STRONG_CONFLICTS", () => {
-  it("정확히 5쌍이다 (spec §3.2)", () => {
-    expect(STRONG_CONFLICTS).toHaveLength(5);
+describe('CONFLICT_THEMES', () => {
+  it('강한 충돌 5쌍 모두 테마가 있다', () => {
+    expect(CONFLICT_THEMES).toHaveLength(5);
   });
 
-  it("각 쌍은 서로 다른 페르소나 ID, 테마, 두 페르소나 입장 한 줄을 가진다", () => {
-    for (const c of STRONG_CONFLICTS) {
-      expect(c.a).not.toBe(c.b);
-      expect(c.theme).toBeTruthy();
-      expect(c.framing).toBeTruthy();
-      expect(c.stanceA).toBeTruthy();
-      expect(c.stanceB).toBeTruthy();
-    }
+  it('토스↔우아한 = 숫자 vs 감성', () => {
+    const t = getThemeForPair('toss-po', 'woowa-cbo');
+    expect(t?.theme).toBe('숫자 vs 감성');
+    expect(t?.framing).toContain('전환율');
   });
 
-  it("spec에 명시된 5쌍이 모두 존재", () => {
-    const pairs = new Set(STRONG_CONFLICTS.map((c) => conflictKey(c.a, c.b)));
-    expect(pairs.has(conflictKey("toss-po", "woowa-cbo"))).toBe(true);
-    expect(pairs.has(conflictKey("toss-po", "kakao-dc"))).toBe(true);
-    expect(pairs.has(conflictKey("daangn-spd", "line-pm"))).toBe(true);
-    expect(pairs.has(conflictKey("naver-spd", "woowa-cbo"))).toBe(true);
-    expect(pairs.has(conflictKey("line-pm", "woowa-cbo"))).toBe(true);
-  });
-});
-
-describe("conflictKey", () => {
-  it("입력 순서와 무관하게 같은 키를 만든다", () => {
-    expect(conflictKey("toss-po", "woowa-cbo")).toBe(conflictKey("woowa-cbo", "toss-po"));
-  });
-});
-
-describe("getStrongConflicts", () => {
-  it("선택 0~1명이면 빈 배열", () => {
-    expect(getStrongConflicts([])).toEqual([]);
-    expect(getStrongConflicts(["toss-po"])).toEqual([]);
-  });
-
-  it("선택된 페르소나 사이의 강한 충돌만 반환한다", () => {
-    const result = getStrongConflicts(["toss-po", "woowa-cbo", "naver-spd"]);
-    const keys = result.map((c) => conflictKey(c.a, c.b)).sort();
-    expect(keys).toEqual(
-      [
-        conflictKey("toss-po", "woowa-cbo"),
-        conflictKey("naver-spd", "woowa-cbo"),
-      ].sort()
+  it('순서 무관 lookup (a,b === b,a)', () => {
+    expect(getThemeForPair('toss-po', 'woowa-cbo')).toEqual(
+      getThemeForPair('woowa-cbo', 'toss-po'),
     );
   });
 
-  it("6명 전체 선택 시 5쌍 모두", () => {
-    const all = ["toss-po", "daangn-spd", "kakao-dc", "naver-spd", "line-pm", "woowa-cbo"];
-    expect(getStrongConflicts(all)).toHaveLength(5);
+  it('강한 충돌이 아닌 쌍은 undefined', () => {
+    expect(getThemeForPair('kakao-dc', 'naver-pd')).toBeUndefined();
   });
 });
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [ ] **Step 2: FAIL 확인**
 
 ```bash
-npm test -- lib/conflicts.test.ts
+npx vitest run lib/conflict/themes.test.ts
 ```
-Expected: FAIL — module not found.
+Expected: FAIL.
 
-- [ ] **Step 3: `lib/conflicts.ts` 구현**
+- [ ] **Step 3: 구현**
 
 ```ts
+// lib/conflict/themes.ts
 /**
- * Role: 페르소나 간 강한 충돌 5쌍 데이터 + 선택 인원 기반 룩업
- * Key Features: spec §3.2 박제. 매트릭스 자동 트리거(§4.1)의 데이터 단일 출처.
- * Dependencies: 없음 (페르소나 ID 문자열만 참조)
- * Notes: 중간 충돌(🟡)·약한 충돌(⚪)은 MVP에서 카드화하지 않음 (spec §3.3).
+ * Role: 강한 충돌 5쌍의 테마 + 프로덕트 프레이밍 (spec §3.2)
+ * Key Features: STEP 5 충돌 카드 텍스트의 원천
+ * Dependencies: @/lib/personas/types
  */
+import type { PersonaId } from '@/lib/personas/types';
 
-export type StrongConflict = {
-  a: string;        // 페르소나 ID
-  b: string;        // 페르소나 ID
-  theme: string;    // 충돌 테마 (예: "숫자 vs 감성")
-  framing: string;  // 프로덕트 프레이밍 한 줄
-  stanceA: string;  // a 페르소나의 한 줄 입장
-  stanceB: string;  // b 페르소나의 한 줄 입장
+export type ConflictTheme = {
+  pair: [PersonaId, PersonaId];
+  theme: string;      // "숫자 vs 감성"
+  framing: string;    // "전환율 vs 기분 좋음, 어느 쪽?"
+  stances: Record<PersonaId, string>; // 페르소나별 한 줄 입장 (STEP 5 카드용)
 };
 
-export const STRONG_CONFLICTS: StrongConflict[] = [
+// 한 줄 입장 카피 — 페르소나별로 이 테마에서 뭘 말할지 (§4.3 톤 가이드)
+// 가이드: 디자이너 언어(시선/위계/그룹/컴포넌트/색 톤 등)로 번역
+export const CONFLICT_THEMES: ConflictTheme[] = [
   {
-    a: "toss-po", b: "woowa-cbo",
-    theme: "숫자 vs 감성",
-    framing: "전환율 vs 기분 좋음, 어느 쪽?",
-    stanceA: "전환율을 끌어올리는 한 액션이 가장 두드러져야 한다.",
-    stanceB: "기능 사이에 '아 좋다' 하는 한 순간이 새어 나와야 한다.",
+    pair: ['toss-po', 'woowa-cbo'],
+    theme: '숫자 vs 감성',
+    framing: '전환율 vs 기분 좋음, 어느 쪽?',
+    stances: {
+      'toss-po': '한 액션만 남겨. 시선이 분산되면 숫자가 안 나와.',
+      'woowa-cbo': '여백과 리듬이 있어야 손이 가. 감정이 먼저 와.',
+    } as Record<PersonaId, string>,
   },
   {
-    a: "toss-po", b: "kakao-dc",
-    theme: "지금 증명 vs 3년 후 시스템",
-    framing: "이번 분기 지표 vs 3년짜리 일관성",
-    stanceA: "지금 이 화면에서 한 액션의 임팩트가 측정 가능해야 한다.",
-    stanceB: "이 결정이 다른 화면에서도 같은 모양으로 반복될 수 있어야 한다.",
+    pair: ['toss-po', 'kakao-dc'],
+    theme: '지금 증명 vs 3년 후 시스템',
+    framing: '이번 분기 지표 vs 3년짜리 일관성',
+    stances: {
+      'toss-po': '이번 분기에 증명되어야 다음이 있어.',
+      'kakao-dc': '이 패턴이 3년 뒤에도 같은 모양이어야 해.',
+    } as Record<PersonaId, string>,
   },
   {
-    a: "daangn-spd", b: "line-pm",
-    theme: "로컬 맥락 vs 글로벌 보편성",
-    framing: "동네 맥락 vs 해외에서도 통할까",
-    stanceA: "동네 맥락 단어와 친숙한 메타포가 신뢰를 만든다.",
-    stanceB: "다국어·다문화에서 깨지지 않는 보편 메타포를 골라야 한다.",
+    pair: ['daangn-pd', 'line-pm'],
+    theme: '로컬 맥락 vs 글로벌 보편성',
+    framing: '동네 맥락 vs 해외에서도 통할까',
+    stances: {
+      'daangn-pd': '동네 사람 말로 써야 해. 번역체는 거리감을 만들어.',
+      'line-pm': '일본·대만에서도 길이랑 아이콘이 깨지지 않아야 해.',
+    } as Record<PersonaId, string>,
   },
   {
-    a: "naver-spd", b: "woowa-cbo",
-    theme: "정보 밀도 vs 감성 여백",
-    framing: "많이 보여줄까 vs 숨통 줄까",
-    stanceA: "한 화면에서 사용자가 처리할 정보의 묶음이 충분히 보여야 한다.",
-    stanceB: "여백이 곧 호흡이고, 호흡이 곧 브랜드 인상이다.",
+    pair: ['naver-pd', 'woowa-cbo'],
+    theme: '정보 밀도 vs 감성 여백',
+    framing: '많이 보여줄까 vs 숨통 줄까',
+    stances: {
+      'naver-pd': '필요한 건 한 화면에 다 보여야 해. 스크롤이 벽이야.',
+      'woowa-cbo': '여백이 있어야 중요한 게 중요해 보여.',
+    } as Record<PersonaId, string>,
   },
   {
-    a: "line-pm", b: "woowa-cbo",
-    theme: "문화 중립 vs 한국적 감성",
-    framing: "어느 나라 사용자도 OK vs 한국인만 아는 그 느낌",
-    stanceA: "문화 의존 메타포는 다른 나라에선 노이즈가 된다.",
-    stanceB: "한국 사용자의 정서를 잡는 한 디테일은 양보할 수 없다.",
+    pair: ['line-pm', 'woowa-cbo'],
+    theme: '문화 중립 vs 한국적 감성',
+    framing: '어느 나라 사용자도 OK vs 한국인만 아는 그 느낌',
+    stances: {
+      'line-pm': '이 아이콘·카피가 다른 문화에서 오해 없이 읽혀야 해.',
+      'woowa-cbo': '한국 사용자만 알아채는 작은 디테일이 브랜드가 돼.',
+    } as Record<PersonaId, string>,
   },
 ];
 
-export function conflictKey(a: string, b: string): string {
-  return [a, b].sort().join("-x-");
+function keyOf(a: PersonaId, b: PersonaId): string {
+  return [a, b].sort().join('|');
 }
 
-export function getStrongConflicts(selectedIds: string[]): StrongConflict[] {
-  if (selectedIds.length < 2) return [];
-  const set = new Set(selectedIds);
-  return STRONG_CONFLICTS.filter((c) => set.has(c.a) && set.has(c.b));
+const BY_KEY = new Map<string, ConflictTheme>();
+for (const t of CONFLICT_THEMES) BY_KEY.set(keyOf(t.pair[0], t.pair[1]), t);
+
+export function getThemeForPair(a: PersonaId, b: PersonaId): ConflictTheme | undefined {
+  return BY_KEY.get(keyOf(a, b));
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [ ] **Step 4: PASS 확인**
 
 ```bash
-npm test -- lib/conflicts.test.ts
+npx vitest run lib/conflict/themes.test.ts
 ```
-Expected: 6 passed.
+Expected: PASS (4 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 커밋**
 
 ```bash
-git add lib/conflicts.ts lib/conflicts.test.ts
-git commit -m "$(cat <<'EOF'
-Add conflict matrix data + lookup — 5 strong conflicts (spec §3.2), used by STEP 3 preview and STEP 5 auto-trigger
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add lib/conflict/themes.ts lib/conflict/themes.test.ts
+git commit -m "Add 5 conflict themes + stances for strong pairs — spec §3.2, designer-language phrasing"
 ```
 
 ---
 
-# Phase 2 — `/api/critique` Route Handler
-
-서버 사이드 Claude 호출. 키 보호, 입력 검증, 텍스트 델타만 추출해 ReadableStream으로 패스. 페르소나 1명당 한 번 호출 (클라가 6번 병렬로 때림).
-
-## Task 2.1: Anthropic SDK 래퍼 + Route 스켈레톤 (Zod 검증 포함)
+### Task B5: `lib/conflict/lookup.ts` — 선택 인원에서 활성 충돌 카드 계산 (TDD)
 
 **Files:**
-- Create: `lib/claude.ts`
-- Create: `app/api/critique/route.ts`
-- Create: `app/api/critique/route.test.ts`
+- Create: `lib/conflict/lookup.test.ts`
+- Create: `lib/conflict/lookup.ts`
 
-- [ ] **Step 1: 실패 테스트 먼저 — 입력 검증 위주**
+- [ ] **Step 1: 실패하는 테스트 작성**
 
 ```ts
-// app/api/critique/route.test.ts
-import { describe, it, expect, vi, beforeEach } from "vitest";
+// lib/conflict/lookup.test.ts
+import { describe, it, expect } from 'vitest';
+import { activeConflictThemes } from './lookup';
 
-vi.mock("@/lib/claude", () => ({
-  streamCritique: vi.fn(async function* () {
-    yield "테스트 청크";
-  }),
-}));
-
-import { POST } from "./route";
-
-function makeRequest(body: unknown) {
-  return new Request("http://localhost/api/critique", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-describe("POST /api/critique", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("personaId 누락 시 400", async () => {
-    const res = await POST(makeRequest({ images: [], context: {} }));
-    expect(res.status).toBe(400);
+describe('activeConflictThemes', () => {
+  it('6명 전원 선택 시 5개 테마 모두 활성', () => {
+    const themes = activeConflictThemes([
+      'toss-po', 'daangn-pd', 'kakao-dc', 'naver-pd', 'line-pm', 'woowa-cbo',
+    ]);
+    expect(themes).toHaveLength(5);
   });
 
-  it("이미지가 1개 미만이면 400", async () => {
-    const res = await POST(makeRequest({
-      personaId: "toss-po",
-      images: [],
-      context: { kind: "x", problem: "y", role: "z", proud: "" },
-    }));
-    expect(res.status).toBe(400);
+  it('토스 + 우아한만 선택 시 1개 테마 (숫자 vs 감성)', () => {
+    const themes = activeConflictThemes(['toss-po', 'woowa-cbo']);
+    expect(themes).toHaveLength(1);
+    expect(themes[0].theme).toBe('숫자 vs 감성');
   });
 
-  it("알 수 없는 personaId면 400", async () => {
-    const res = await POST(makeRequest({
-      personaId: "unknown",
-      images: [{ name: "a.png", dataUrl: "data:image/png;base64,iVBOR" }],
-      context: { kind: "x", problem: "y", role: "z", proud: "" },
-    }));
-    expect(res.status).toBe(400);
+  it('1명만 선택 시 0개', () => {
+    expect(activeConflictThemes(['toss-po'])).toEqual([]);
   });
 
-  it("정상 요청은 text/plain 스트림을 200으로 반환", async () => {
-    const res = await POST(makeRequest({
-      personaId: "toss-po",
-      images: [{ name: "a.png", dataUrl: "data:image/png;base64,iVBOR" }],
-      context: { kind: "실무 출시작", problem: "x", role: "PD 단독", proud: "" },
-    }));
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/plain");
-    const text = await res.text();
-    expect(text).toContain("테스트 청크");
+  it('강한 충돌 없는 조합(카카오 + 네이버)은 0개', () => {
+    expect(activeConflictThemes(['kakao-dc', 'naver-pd'])).toEqual([]);
+  });
+
+  it('중복 페르소나가 섞여도 중복 테마를 만들지 않는다', () => {
+    const themes = activeConflictThemes(['toss-po', 'toss-po', 'woowa-cbo']);
+    expect(themes).toHaveLength(1);
   });
 });
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [ ] **Step 2: FAIL 확인**
 
 ```bash
-npm test -- app/api/critique/route.test.ts
+npx vitest run lib/conflict/lookup.test.ts
 ```
-Expected: FAIL — module not found.
+Expected: FAIL.
 
-- [ ] **Step 3: `lib/claude.ts` 구현 (mock 가능한 async generator 인터페이스)**
+- [ ] **Step 3: 구현**
 
 ```ts
+// lib/conflict/lookup.ts
 /**
- * Role: Anthropic SDK 래퍼 — 페르소나별 크리틱 텍스트 델타를 async iterable로 흘려준다
- * Key Features: claude-sonnet-4-6 vision, system 프롬프트 캐싱, content_block_delta만 추출
- * Dependencies: @anthropic-ai/sdk, lib/personas, lib/prompts, lib/store(타입)
- * Notes: 서버 한정. ANTHROPIC_API_KEY는 process.env로 자동 주입 (dotenv는 Next.js가 처리).
+ * Role: 선택된 페르소나 배열 → STEP 5에 표시할 강한 충돌 테마 목록
+ * Key Features: 매트릭스 룩업 (§4.1 옵션 A: 자동 트리거)
+ * Dependencies: ./themes
+ * Notes: 클라이언트·서버 양쪽에서 쓰이는 순수 함수
  */
-import Anthropic from "@anthropic-ai/sdk";
-import type { Persona } from "./personas";
-import type { ContextAnswers } from "./store";
-import { buildSystemPrompt, buildUserPrompt } from "./prompts";
+import type { PersonaId } from '@/lib/personas/types';
+import { CONFLICT_THEMES, type ConflictTheme } from './themes';
 
-const MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 600;   // 카드 한 장 약 200자 가드레일 + 한국어 토큰 여유
-
-const client = new Anthropic();   // 환경변수에서 키 자동 로드
-
-export type ImagePayload = { name: string; dataUrl: string };
-
-function dataUrlToImageBlock(dataUrl: string) {
-  // 형식: data:image/png;base64,iVBOR...
-  const match = dataUrl.match(/^data:(image\/(png|jpeg|webp|gif));base64,(.+)$/);
-  if (!match) throw new Error("지원하지 않는 이미지 형식입니다. PNG/JPEG/WebP/GIF 만 가능합니다.");
-  const [, mediaType, , data] = match;
-  return {
-    type: "image" as const,
-    source: { type: "base64" as const, media_type: mediaType as "image/png", data },
-  };
+export function activeConflictThemes(selected: PersonaId[]): ConflictTheme[] {
+  const set = new Set(selected);
+  return CONFLICT_THEMES.filter(
+    (t) => set.has(t.pair[0]) && set.has(t.pair[1]),
+  );
 }
+```
 
-export async function* streamCritique(
-  persona: Persona,
-  images: ImagePayload[],
-  context: ContextAnswers,
-): AsyncGenerator<string, void, void> {
-  const stream = client.messages.stream({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: buildSystemPrompt(persona),
-    messages: [
-      {
-        role: "user",
-        content: [
-          ...images.map((i) => dataUrlToImageBlock(i.dataUrl)),
-          { type: "text", text: buildUserPrompt(context) },
-        ],
-      },
-    ],
+- [ ] **Step 4: PASS 확인**
+
+```bash
+npx vitest run lib/conflict/lookup.test.ts
+```
+Expected: PASS (5 tests).
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add lib/conflict/lookup.ts lib/conflict/lookup.test.ts
+git commit -m "Add activeConflictThemes — derive STEP 5 conflict cards from selection (matrix lookup, §4.1)"
+```
+
+---
+
+### Task B6: `lib/critique/types.ts` + `context-questions.ts` — 맥락 질문 데이터
+
+**Files:**
+- Create: `lib/critique/types.ts`
+- Create: `lib/critique/context-questions.ts`
+- Create: `lib/critique/context-questions.test.ts`
+
+- [ ] **Step 1: 타입 작성**
+
+```ts
+// lib/critique/types.ts
+/**
+ * Role: 크리틱 도메인 타입
+ * Key Features: ContextAnswer, CritiqueCard, ContextQuestion
+ */
+
+export type WorkKind =
+  | 'launched' | 'concept' | 'side' | 'student' | 'redesign' | 'other';
+
+export type RoleKind = 'pd-solo' | 'pd-with-pm' | 'part-of-team' | 'other';
+
+export type ContextAnswer = {
+  workKind: WorkKind;
+  coreProblem: string;    // 한 문장 — spec §4.2 ② (50자 권장)
+  role: RoleKind;
+  proudDecision: string;  // 자랑하고 싶은 결정 — 옵션 (비워도 OK)
+};
+
+export type CritiqueCard = {
+  personaId: string;
+  diagnosis: string;      // 한 줄 진단 (≤40자)
+  questions: string[];    // 3개 (각 ≤50자)
+  suggestions: string[];  // 1-2개 (각 ≤80자)
+};
+
+export type ContextQuestion =
+  | {
+      id: 'workKind';
+      prompt: string;
+      kind: 'choice';
+      options: Array<{ value: WorkKind; label: string }>;
+    }
+  | {
+      id: 'coreProblem';
+      prompt: string;
+      kind: 'text';
+      maxLength: number;
+      required: true;
+    }
+  | {
+      id: 'role';
+      prompt: string;
+      kind: 'choice';
+      options: Array<{ value: RoleKind; label: string }>;
+    }
+  | {
+      id: 'proudDecision';
+      prompt: string;
+      kind: 'text';
+      maxLength: number;
+      required: false;
+    };
+```
+
+- [ ] **Step 2: 실패하는 테스트 작성**
+
+```ts
+// lib/critique/context-questions.test.ts
+import { describe, it, expect } from 'vitest';
+import { CONTEXT_QUESTIONS } from './context-questions';
+
+describe('CONTEXT_QUESTIONS', () => {
+  it('4개 질문 (spec §4.2: 객 2 + 자 2)', () => {
+    expect(CONTEXT_QUESTIONS).toHaveLength(4);
   });
 
-  for await (const event of stream) {
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield event.delta.text;
+  it('순서: workKind → coreProblem → role → proudDecision', () => {
+    expect(CONTEXT_QUESTIONS.map((q) => q.id)).toEqual([
+      'workKind', 'coreProblem', 'role', 'proudDecision',
+    ]);
+  });
+
+  it('객관식 질문은 options를 가진다', () => {
+    const workKind = CONTEXT_QUESTIONS[0];
+    expect(workKind.kind).toBe('choice');
+    if (workKind.kind === 'choice') {
+      expect(workKind.options.length).toBeGreaterThanOrEqual(5);
     }
+  });
+
+  it('coreProblem은 required, proudDecision은 옵션', () => {
+    const core = CONTEXT_QUESTIONS[1];
+    const proud = CONTEXT_QUESTIONS[3];
+    if (core.kind === 'text') expect(core.required).toBe(true);
+    if (proud.kind === 'text') expect(proud.required).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 3: FAIL 확인**
+
+```bash
+npx vitest run lib/critique/context-questions.test.ts
+```
+Expected: FAIL.
+
+- [ ] **Step 4: 구현**
+
+```ts
+// lib/critique/context-questions.ts
+/**
+ * Role: STEP 2 맥락 대화 4개 질문 데이터 (spec §4.2)
+ * Key Features: 객관식 2 + 자유 2, 포트폴리오 톤
+ */
+import type { ContextQuestion } from './types';
+
+export const CONTEXT_QUESTIONS: ContextQuestion[] = [
+  {
+    id: 'workKind',
+    prompt: '이 작업의 종류는?',
+    kind: 'choice',
+    options: [
+      { value: 'launched', label: '실무 출시작' },
+      { value: 'concept', label: '실무 컨셉' },
+      { value: 'side', label: '사이드 프로젝트' },
+      { value: 'student', label: '학생 작품' },
+      { value: 'redesign', label: '리디자인' },
+      { value: 'other', label: '기타' },
+    ],
+  },
+  {
+    id: 'coreProblem',
+    prompt: '이 작업이 해결하려던 핵심 문제는? (한 문장)',
+    kind: 'text',
+    maxLength: 50,
+    required: true,
+  },
+  {
+    id: 'role',
+    prompt: '본인의 역할은?',
+    kind: 'choice',
+    options: [
+      { value: 'pd-solo', label: 'PD 단독' },
+      { value: 'pd-with-pm', label: 'PD + PM' },
+      { value: 'part-of-team', label: '디자인팀 일부' },
+      { value: 'other', label: '기타' },
+    ],
+  },
+  {
+    id: 'proudDecision',
+    prompt: '이 작업에서 가장 자랑하고 싶은 결정은? (없으면 비워도 OK)',
+    kind: 'text',
+    maxLength: 200,
+    required: false,
+  },
+];
+```
+
+- [ ] **Step 5: PASS 확인**
+
+```bash
+npx vitest run lib/critique/context-questions.test.ts
+```
+Expected: PASS (4 tests).
+
+- [ ] **Step 6: 커밋**
+
+```bash
+git add lib/critique
+git commit -m "Add context questions data + types — 4 questions per spec §4.2 (portfolio tone)"
+```
+
+---
+
+### Task B7: `lib/critique/guardrails.ts` — 카드 길이 검증 (TDD)
+
+**Files:**
+- Create: `lib/critique/guardrails.test.ts`
+- Create: `lib/critique/guardrails.ts`
+
+- [ ] **Step 1: 실패하는 테스트 작성**
+
+```ts
+// lib/critique/guardrails.test.ts
+import { describe, it, expect } from 'vitest';
+import { validateCard, MAX_LENGTHS } from './guardrails';
+import type { CritiqueCard } from './types';
+
+const ok: CritiqueCard = {
+  personaId: 'toss-po',
+  diagnosis: '7개 약관이 다 같은 무게라 시선이 멈출 곳이 없어.',
+  questions: [
+    '이 화면에서 시선이 가장 먼저 가는 곳이 어디야?',
+    '필수와 선택을 시각적으로 어떻게 구분했어?',
+    '"전체 동의"와 "발급 신청" 버튼의 위계 차이가 보여?',
+  ],
+  suggestions: ['필수 3개를 한 그룹으로, 선택 4개는 보조 영역으로 분리'],
+};
+
+describe('validateCard', () => {
+  it('정상 카드는 valid', () => {
+    expect(validateCard(ok).valid).toBe(true);
+  });
+
+  it('diagnosis 40자 초과 시 invalid', () => {
+    const bad = { ...ok, diagnosis: 'x'.repeat(41) };
+    expect(validateCard(bad).valid).toBe(false);
+    expect(validateCard(bad).errors).toContain('diagnosis');
+  });
+
+  it('question 50자 초과 시 invalid', () => {
+    const bad = { ...ok, questions: ['a'.repeat(51), ok.questions[1], ok.questions[2]] };
+    expect(validateCard(bad).valid).toBe(false);
+    expect(validateCard(bad).errors).toContain('questions');
+  });
+
+  it('질문 3개가 아니면 invalid', () => {
+    const bad = { ...ok, questions: [ok.questions[0], ok.questions[1]] };
+    expect(validateCard(bad).valid).toBe(false);
+  });
+
+  it('suggestion 80자 초과 시 invalid', () => {
+    const bad = { ...ok, suggestions: ['s'.repeat(81)] };
+    expect(validateCard(bad).valid).toBe(false);
+  });
+
+  it('제안 0개는 invalid, 1개 또는 2개는 valid', () => {
+    expect(validateCard({ ...ok, suggestions: [] }).valid).toBe(false);
+    expect(validateCard({ ...ok, suggestions: ['짧은 제안'] }).valid).toBe(true);
+    expect(validateCard({ ...ok, suggestions: ['첫 제안', '둘째 제안'] }).valid).toBe(true);
+    expect(validateCard({ ...ok, suggestions: ['a', 'b', 'c'] }).valid).toBe(false);
+  });
+
+  it('MAX_LENGTHS 상수 검증', () => {
+    expect(MAX_LENGTHS.diagnosis).toBe(40);
+    expect(MAX_LENGTHS.question).toBe(50);
+    expect(MAX_LENGTHS.suggestion).toBe(80);
+  });
+});
+```
+
+- [ ] **Step 2: FAIL 확인**
+
+```bash
+npx vitest run lib/critique/guardrails.test.ts
+```
+Expected: FAIL.
+
+- [ ] **Step 3: 구현**
+
+```ts
+// lib/critique/guardrails.ts
+/**
+ * Role: 크리틱 카드 가드레일 — 길이 제한 검증 (spec §4.3)
+ * Key Features: 40/50/80자 한도, 질문 3개 고정, 제안 1-2개
+ * Dependencies: ./types
+ * Notes: system prompt에도 같은 한도를 명시하지만, LLM이 넘기면 클라이언트 측에서도 경고 가능
+ */
+import type { CritiqueCard } from './types';
+
+export const MAX_LENGTHS = {
+  diagnosis: 40,
+  question: 50,
+  suggestion: 80,
+} as const;
+
+export type ValidationResult = {
+  valid: boolean;
+  errors: Array<'diagnosis' | 'questions' | 'suggestions'>;
+};
+
+export function validateCard(card: CritiqueCard): ValidationResult {
+  const errors: ValidationResult['errors'] = [];
+
+  if (card.diagnosis.length > MAX_LENGTHS.diagnosis) errors.push('diagnosis');
+
+  if (card.questions.length !== 3) {
+    errors.push('questions');
+  } else if (card.questions.some((q) => q.length > MAX_LENGTHS.question)) {
+    errors.push('questions');
   }
+
+  if (card.suggestions.length < 1 || card.suggestions.length > 2) {
+    errors.push('suggestions');
+  } else if (card.suggestions.some((s) => s.length > MAX_LENGTHS.suggestion)) {
+    errors.push('suggestions');
+  }
+
+  return { valid: errors.length === 0, errors };
 }
 ```
 
-- [ ] **Step 4: `app/api/critique/route.ts` 구현 (Zod 검증 + 스트리밍 응답)**
+- [ ] **Step 4: PASS 확인**
+
+```bash
+npx vitest run lib/critique/guardrails.test.ts
+```
+Expected: PASS (7 tests).
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add lib/critique/guardrails.ts lib/critique/guardrails.test.ts
+git commit -m "Add card length guardrails — 40/50/80 limits, 3 questions, 1-2 suggestions per spec §4.3"
+```
+
+---
+
+### Task B8: `lib/personas/system-prompt.ts` — system prompt 빌더 (TDD)
+
+spec §4.4 7원칙 + §4.5 톤 가이드 + §4.3 길이 가드를 한 system prompt로 합성한다. 페르소나별 파트(첫 렌즈·양보 안 하는 것·질문 영역·대표 질문)도 넣는다.
+
+**Files:**
+- Create: `lib/personas/system-prompt.test.ts`
+- Create: `lib/personas/system-prompt.ts`
+
+- [ ] **Step 1: 실패하는 테스트 작성**
 
 ```ts
+// lib/personas/system-prompt.test.ts
+import { describe, it, expect } from 'vitest';
+import { buildSystemPrompt } from './system-prompt';
+
+describe('buildSystemPrompt', () => {
+  it('토스 PO prompt는 페르소나 레이블·첫 렌즈 포함', () => {
+    const p = buildSystemPrompt('toss-po');
+    expect(p).toContain('토스 스타일 PO');
+    expect(p).toContain('숫자 · 한 액션');
+  });
+
+  it('모든 페르소나 prompt에 디자인 원칙 7개 번호가 포함', () => {
+    const p = buildSystemPrompt('woowa-cbo');
+    for (const n of ['1.', '2.', '3.', '4.', '5.', '6.', '7.']) {
+      expect(p).toContain(n);
+    }
+  });
+
+  it('톤 가이드 핵심 문구 포함 (spec §4.5)', () => {
+    const p = buildSystemPrompt('daangn-pd');
+    expect(p).toMatch(/디자이너 언어/);
+    expect(p).toMatch(/완성된 작업|포트폴리오/);
+    expect(p).toMatch(/평가하지 않는다|동료/);
+  });
+
+  it('출력 포맷 가드 (40/50/80자) 포함', () => {
+    const p = buildSystemPrompt('toss-po');
+    expect(p).toContain('40');
+    expect(p).toContain('50');
+    expect(p).toContain('80');
+  });
+
+  it('JSON 스키마 지시 (diagnosis/questions/suggestions 3개 필드) 포함', () => {
+    const p = buildSystemPrompt('kakao-dc');
+    expect(p).toMatch(/diagnosis/);
+    expect(p).toMatch(/questions/);
+    expect(p).toMatch(/suggestions/);
+  });
+
+  it('페르소나별로 유니크한 대표 질문을 포함', () => {
+    const toss = buildSystemPrompt('toss-po');
+    const daangn = buildSystemPrompt('daangn-pd');
+    expect(toss).toContain('시선');
+    expect(daangn).toMatch(/엄마|읽힐/);
+    expect(toss).not.toContain('엄마 핸드폰');
+  });
+});
+```
+
+- [ ] **Step 2: FAIL 확인**
+
+```bash
+npx vitest run lib/personas/system-prompt.test.ts
+```
+Expected: FAIL.
+
+- [ ] **Step 3: 구현**
+
+```ts
+// lib/personas/system-prompt.ts
 /**
- * Role: 클라이언트 → Claude 사이의 보호된 게이트웨이 — 키 노출 없이 스트리밍 텍스트 응답
- * Key Features: Zod 검증, 페르소나 ID 화이트리스트, ReadableStream 텍스트 청크 전달
- * Dependencies: zod, lib/claude, lib/personas
- * Notes: 한국어 에러 메시지(CLAUDE.md 원칙). PERSONA_IDS로만 호출 허용.
+ * Role: Claude API에 보낼 system prompt 생성 (페르소나별)
+ * Key Features: 공통(디자인 7원칙 + 톤 가이드 + 출력 가드) + 페르소나별(렌즈·질문 영역·대표 질문)
+ * Dependencies: ./definitions, ./types
+ * Notes: 자구 한 글자도 무게 있음 — spec §4.4/§4.5 원문 유지
  */
-import { z } from "zod";
-import { streamCritique } from "@/lib/claude";
-import { getPersonaById, PERSONA_IDS } from "@/lib/personas";
+import type { PersonaId } from './types';
+import { PERSONAS } from './definitions';
+import { MAX_LENGTHS } from '@/lib/critique/guardrails';
 
-const ImageSchema = z.object({
-  name: z.string().min(1),
-  dataUrl: z.string().regex(/^data:image\/(png|jpeg|webp|gif);base64,/, "지원하지 않는 이미지 형식입니다."),
+const DESIGN_PRINCIPLES = `
+[디자인 원칙 7개 — 반드시 내면화할 것]
+1. 크리틱은 판결이 아니라 대화다.
+2. 답이 아니라 질문에 무게중심을 둔다. (제안은 허용하되 강한 자리는 질문)
+3. 여백을 두려워하지 않는다. 침묵도 피드백이다.
+4. 회사 이름은 빌리되 로고·색·폰트는 차용하지 않는다. (페르소나는 관점이지 브랜드가 아니다)
+5. 디자이너에게는 디자이너 언어로 말한다. (PO·센터장 머릿속 언어가 아니라 디자인 결정의 언어로 변환)
+6. 평가가 아니라 동료의 피드백이다. 완성작이 다음 작업으로 이어지도록 본다.
+7. 자기 표현의 리허설이다. 디자이너가 자기 작업을 더 잘 이야기하게 돕는다.
+`.trim();
+
+const TONE_GUIDE = `
+[톤 가이드]
+디자이너가 완성된 작업을 포트폴리오로 들고 와서 보여줄 때, 시니어 동료/포트폴리오 리뷰어 입장에서 봅니다. 회의실 동료가 아니라 첫 만남의 리뷰어.
+- 평가하지 않는다. 동료처럼 본다.
+- 자기 머릿속 비즈니스 언어(전환율, MAU, 법적 필수 등)로 묻지 않는다. 디자이너가 답할 수 있는 디자인 결정의 언어(시각적 위계, 그룹핑, 시선 흐름, 컴포넌트 일관성 등)로 변환해서 묻는다.
+- 질문 → 제안 순서. 답은 강요하지 않는다.
+- 자기 영역을 벗어나는 주제는 다른 페르소나에게 양보한다.
+`.trim();
+
+const OUTPUT_GUARD = `
+[출력 포맷 — 엄수]
+반드시 아래 JSON 객체 하나만 출력하라. 추가 설명·마크다운·머리말 금지.
+
+{
+  "diagnosis": string,   // 한 줄 진단. ${MAX_LENGTHS.diagnosis}자 이내
+  "questions": string[], // 정확히 3개. 각 ${MAX_LENGTHS.question}자 이내
+  "suggestions": string[] // 1개 또는 2개. 각 ${MAX_LENGTHS.suggestion}자 이내
+}
+
+카드 전체 합계는 약 200자 이내(모바일 한 스크린에 2장 보이게).
+`.trim();
+
+export function buildSystemPrompt(id: PersonaId): string {
+  const p = PERSONAS[id];
+
+  const personaBlock = `
+[당신의 페르소나]
+- 레이블: ${p.label}
+- 핵심 렌즈: ${p.firstLens}
+- 질문 영역: ${p.questionDomain}
+- 절대 양보 안 하는 것: ${p.nonNegotiables.join(' / ')}
+- 양보 가능한 것: ${p.tradeoffs.join(' / ')}
+- 대표 질문 스타일: "${p.representativeQuestion}"
+`.trim();
+
+  return [
+    `당신은 "${p.label}"입니다. 가상의 페르소나로, 실제 회사·직원의 의견을 대변하지 않습니다.`,
+    personaBlock,
+    DESIGN_PRINCIPLES,
+    TONE_GUIDE,
+    OUTPUT_GUARD,
+  ].join('\n\n');
+}
+```
+
+- [ ] **Step 4: PASS 확인**
+
+```bash
+npx vitest run lib/personas/system-prompt.test.ts
+```
+Expected: PASS (6 tests).
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add lib/personas/system-prompt.ts lib/personas/system-prompt.test.ts
+git commit -m "Add system prompt builder — 7 principles + tone guide + length guard + per-persona block"
+```
+
+---
+
+### Task B9: API Route `app/api/critique/route.ts` + 통합 테스트 (모킹)
+
+클라이언트는 페르소나별 1회씩 병렬로 `/api/critique`를 호출. 각 요청은 `{ personaId, contextAnswers, images }`를 보내고, 응답은 Claude의 스트리밍 텍스트 청크를 그대로 흘려보낸다.
+
+**Files:**
+- Create: `tests/helpers/mock-anthropic.ts`
+- Create: `tests/api/critique.test.ts`
+- Create: `app/api/critique/route.ts`
+
+- [ ] **Step 1: SDK 모킹 헬퍼 작성**
+
+```ts
+// tests/helpers/mock-anthropic.ts
+/**
+ * Role: @anthropic-ai/sdk 테스트용 가짜 client 팩토리
+ * Key Features: toTextStream async iterable을 반환. vi.hoisted와 함께 사용
+ * Notes: 실제 Anthropic 호출 없이 route handler 검증
+ */
+import { vi } from 'vitest';
+
+// 외부에서 vi.hoisted() 안에서 호출해 ctor를 얻는다
+export function createAnthropicMock() {
+  const messages = { stream: vi.fn() };
+  const ctor = vi.fn().mockImplementation(() => ({ messages }));
+  return { ctor, messages };
+}
+
+// 청크 배열을 async iterable 스트림 객체로 감싼다
+export function textStreamOf(chunks: string[]) {
+  return {
+    async *toTextStream() {
+      for (const c of chunks) yield c;
+    },
+  };
+}
+```
+
+- [ ] **Step 2: 실패하는 통합 테스트 작성**
+
+```ts
+// tests/api/critique.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { textStreamOf } from '@/tests/helpers/mock-anthropic';
+
+// vi.mock은 파일 최상단으로 호이스팅되므로, mock factory가 참조하는 변수도 vi.hoisted로 감싸야 한다.
+// vitest.config의 globals:true 덕분에 hoisted 콜백 안에서도 전역 vi가 사용 가능하다.
+const hoisted = vi.hoisted(() => {
+  const messages = { stream: vi.fn() };
+  const ctor = vi.fn().mockImplementation(() => ({ messages }));
+  return { ctor, messages };
 });
+vi.mock('@anthropic-ai/sdk', () => ({ default: hoisted.ctor }));
 
-const ContextSchema = z.object({
-  kind: z.string().min(1, "작업 종류를 선택해주세요."),
-  problem: z.string(),
-  role: z.string().min(1, "역할을 선택해주세요."),
-  proud: z.string(),
+import { POST } from '@/app/api/critique/route';
+
+describe('POST /api/critique', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    hoisted.ctor.mockClear();
+    hoisted.messages.stream.mockReset();
+    hoisted.messages.stream.mockReturnValue(textStreamOf(['{"diagnosis":', '"hi"}']));
+  });
+
+  it('유효한 요청에 대해 스트림 응답을 반환한다', async () => {
+    const req = new Request('http://localhost/api/critique', {
+      method: 'POST',
+      body: JSON.stringify({
+        personaId: 'toss-po',
+        contextAnswers: {
+          workKind: 'launched',
+          coreProblem: '카드 약관 동의를 덜 까다롭게',
+          role: 'pd-solo',
+          proudDecision: '',
+        },
+        images: [{ mediaType: 'image/png', base64: 'AAAA' }],
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe('{"diagnosis":"hi"}');
+  });
+
+  it('Anthropic messages.stream이 토스 PO용 system prompt로 호출된다', async () => {
+    const req = new Request('http://localhost/api/critique', {
+      method: 'POST',
+      body: JSON.stringify({
+        personaId: 'toss-po',
+        contextAnswers: { workKind: 'launched', coreProblem: 'x', role: 'pd-solo', proudDecision: '' },
+        images: [{ mediaType: 'image/png', base64: 'AAAA' }],
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+    await POST(req);
+    expect(hoisted.messages.stream).toHaveBeenCalledOnce();
+    const arg = hoisted.messages.stream.mock.calls[0][0];
+    expect(arg.system).toContain('토스 스타일 PO');
+    expect(arg.messages[0].content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'image' })])
+    );
+  });
+
+  it('personaId 누락 시 400', async () => {
+    const req = new Request('http://localhost/api/critique', {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: { 'content-type': 'application/json' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it('ANTHROPIC_API_KEY 누락 시 500', async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const req = new Request('http://localhost/api/critique', {
+      method: 'POST',
+      body: JSON.stringify({
+        personaId: 'toss-po',
+        contextAnswers: { workKind: 'launched', coreProblem: 'x', role: 'pd-solo', proudDecision: '' },
+        images: [{ mediaType: 'image/png', base64: 'AAAA' }],
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(500);
+  });
 });
+```
 
-const BodySchema = z.object({
-  personaId: z.enum(PERSONA_IDS as [string, ...string[]]),
-  images: z.array(ImageSchema).min(1, "이미지를 한 장 이상 올려주세요.").max(8),
-  context: ContextSchema,
-});
+- [ ] **Step 3: FAIL 확인**
 
-export async function POST(req: Request) {
-  let payload: z.infer<typeof BodySchema>;
+```bash
+npx vitest run tests/api/critique.test.ts
+```
+Expected: FAIL — route.ts 미존재.
+
+- [ ] **Step 4: Route handler 구현**
+
+```ts
+// app/api/critique/route.ts
+/**
+ * Role: Claude API 스트리밍 프록시 — 페르소나 1명 크리틱 생성
+ * Key Features: 서버 사이드 전용 (API 키 보호), 이미지+맥락+페르소나 system prompt 조립, 스트리밍 패스스루
+ * Dependencies: @anthropic-ai/sdk, @/lib/personas, @/lib/critique
+ * Notes: 클라이언트는 페르소나별로 이 엔드포인트를 병렬 호출한다 (§4.6 STEP 4)
+ */
+import Anthropic from '@anthropic-ai/sdk';
+import { PERSONA_IDS, type PersonaId } from '@/lib/personas/types';
+import { buildSystemPrompt } from '@/lib/personas/system-prompt';
+import type { ContextAnswer } from '@/lib/critique/types';
+
+type ImageInput = { mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; base64: string };
+
+type Body = {
+  personaId?: string;
+  contextAnswers?: ContextAnswer;
+  images?: ImageInput[];
+};
+
+function isPersonaId(x: unknown): x is PersonaId {
+  return typeof x === 'string' && (PERSONA_IDS as readonly string[]).includes(x);
+}
+
+function buildUserContent(contextAnswers: ContextAnswer, images: ImageInput[]) {
+  const contextText = [
+    `[작업 종류] ${contextAnswers.workKind}`,
+    `[핵심 문제] ${contextAnswers.coreProblem}`,
+    `[역할] ${contextAnswers.role}`,
+    contextAnswers.proudDecision
+      ? `[자랑하고 싶은 결정] ${contextAnswers.proudDecision}`
+      : '[자랑하고 싶은 결정] (응답 없음)',
+    '',
+    '위 맥락과 아래 화면을 보고, 당신의 페르소나로 크리틱 카드 JSON을 출력하라.',
+  ].join('\n');
+
+  return [
+    ...images.map((img) => ({
+      type: 'image' as const,
+      source: { type: 'base64' as const, media_type: img.mediaType, data: img.base64 },
+    })),
+    { type: 'text' as const, text: contextText },
+  ];
+}
+
+export async function POST(req: Request): Promise<Response> {
+  let body: Body;
   try {
-    const json = await req.json();
-    payload = BodySchema.parse(json);
-  } catch (err) {
-    const message = err instanceof z.ZodError ? err.issues[0]?.message ?? "요청 형식이 올바르지 않습니다." : "요청 형식이 올바르지 않습니다.";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-    });
+    body = (await req.json()) as Body;
+  } catch {
+    return new Response('invalid json', { status: 400 });
   }
 
-  const persona = getPersonaById(payload.personaId);
-  if (!persona) {
-    return new Response(JSON.stringify({ error: "알 수 없는 페르소나입니다." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-    });
-  }
+  if (!isPersonaId(body.personaId)) return new Response('invalid personaId', { status: 400 });
+  if (!body.contextAnswers || typeof body.contextAnswers.coreProblem !== 'string')
+    return new Response('missing contextAnswers', { status: 400 });
+  if (!Array.isArray(body.images) || body.images.length === 0)
+    return new Response('missing images', { status: 400 });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return new Response('server misconfigured', { status: 500 });
+
+  const client = new Anthropic({ apiKey });
+
+  const system = buildSystemPrompt(body.personaId);
+  const userContent = buildUserContent(body.contextAnswers, body.images);
+
+  const stream = client.messages.stream({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 800,
+    system,
+    messages: [{ role: 'user', content: userContent }],
+  });
 
   const encoder = new TextEncoder();
-  const readable = new ReadableStream({
+  const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const chunk of streamCritique(persona, payload.images, payload.context)) {
+        for await (const chunk of (stream as any).toTextStream()) {
           controller.enqueue(encoder.encode(chunk));
         }
         controller.close();
       } catch (err) {
-        const message = err instanceof Error ? err.message : "크리틱 생성 중 오류가 발생했습니다.";
-        controller.enqueue(encoder.encode(`\n\n[오류] ${message}`));
-        controller.close();
+        controller.error(err);
       }
     },
   });
 
   return new Response(readable, {
     headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
     },
   });
 }
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [ ] **Step 5: PASS 확인**
 
 ```bash
-npm test -- app/api/critique/route.test.ts
+npx vitest run tests/api/critique.test.ts
 ```
-Expected: 4 passed.
+Expected: PASS (4 tests). 필요 시 모킹 시그니처 조정.
 
-- [ ] **Step 6: 타입 체크**
+- [ ] **Step 6: 커밋**
+
+```bash
+git add tests/helpers tests/api app/api/critique/route.ts
+git commit -m "Add /api/critique streaming route — server-side Anthropic call, per-persona system prompt, mocked integration tests"
+```
+
+---
+
+**Phase B 검증 체크포인트**
+
+```bash
+npm test && npm run typecheck
+```
+Expected: 도메인 모든 테스트 통과 (≈26개) + API Route 통합 테스트 통과 (4개) + typecheck 통과.
+
+---
+
+# Phase C — UI 5 STEP
+
+## UI 테스트 원칙
+
+- **최소 행동 테스트만**: 핵심 상호작용 1-2개/컴포넌트.
+- `PersonaPicker`·`ConflictCard`·`DropZone`만 테스트 대상. 순수 프리젠테이션 컴포넌트는 테스트 없음.
+- ⭐ **STEP 5 `ConflictCard`의 "어느 쪽?" 입력칸은 반드시 테스트** — USP 핵심이라 회귀 방지가 중요.
+
+---
+
+### Task C1: `lib/store.ts` — Zustand 앱 상태
+
+**Files:**
+- Create: `lib/store.ts`
+
+- [ ] **Step 1: 스토어 작성**
+
+```ts
+/**
+ * Role: 5단계 플로우 동안 유지되는 클라이언트 상태
+ * Key Features: 업로드 이미지(base64), 맥락 답변, 선택 페르소나, 크리틱 결과, STEP 5 유저 입장 입력
+ * Dependencies: zustand
+ * Notes: DB 없음(MVP) — 새로고침 시 날아감. localStorage 저장 안 함(이미지 용량 문제).
+ */
+'use client';
+
+import { create } from 'zustand';
+import type { PersonaId } from '@/lib/personas/types';
+import type { ContextAnswer, CritiqueCard } from '@/lib/critique/types';
+
+export type UploadedImage = {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  base64: string;
+  previewUrl: string; // object URL (UI 미리보기용, revoke 시 안전)
+};
+
+type State = {
+  images: UploadedImage[];
+  contextAnswers: ContextAnswer | null;
+  selectedPersonas: PersonaId[];
+  critiques: Record<string, { text: string; done: boolean; error?: string }>;
+  userStances: Record<string, string>; // STEP 5 "어느 쪽?" 입력 (key = pair key "a|b")
+};
+
+type Actions = {
+  setImages: (imgs: UploadedImage[]) => void;
+  setContextAnswers: (a: ContextAnswer) => void;
+  setSelectedPersonas: (ids: PersonaId[]) => void;
+  appendCritiqueChunk: (personaId: PersonaId, chunk: string) => void;
+  markCritiqueDone: (personaId: PersonaId) => void;
+  markCritiqueError: (personaId: PersonaId, message: string) => void;
+  setUserStance: (pairKey: string, text: string) => void;
+  reset: () => void;
+};
+
+const initial: State = {
+  images: [],
+  contextAnswers: null,
+  selectedPersonas: ['toss-po', 'daangn-pd', 'kakao-dc', 'naver-pd', 'line-pm', 'woowa-cbo'], // §4.6 STEP 3 디폴트
+  critiques: {},
+  userStances: {},
+};
+
+export const useAppStore = create<State & Actions>((set) => ({
+  ...initial,
+  setImages: (images) => set({ images }),
+  setContextAnswers: (contextAnswers) => set({ contextAnswers }),
+  setSelectedPersonas: (selectedPersonas) => set({ selectedPersonas }),
+  appendCritiqueChunk: (personaId, chunk) =>
+    set((s) => {
+      const prev = s.critiques[personaId] ?? { text: '', done: false };
+      return { critiques: { ...s.critiques, [personaId]: { ...prev, text: prev.text + chunk } } };
+    }),
+  markCritiqueDone: (personaId) =>
+    set((s) => {
+      const prev = s.critiques[personaId] ?? { text: '', done: false };
+      return { critiques: { ...s.critiques, [personaId]: { ...prev, done: true } } };
+    }),
+  markCritiqueError: (personaId, message) =>
+    set((s) => ({
+      critiques: { ...s.critiques, [personaId]: { text: s.critiques[personaId]?.text ?? '', done: true, error: message } },
+    })),
+  setUserStance: (pairKey, text) =>
+    set((s) => ({ userStances: { ...s.userStances, [pairKey]: text } })),
+  reset: () => set(initial),
+}));
+
+// pair key 유틸 — STEP 5 카드 렌더·입력 저장에 공통 사용
+export function pairKeyOf(a: PersonaId, b: PersonaId): string {
+  return [a, b].sort().join('|');
+}
+```
+
+- [ ] **Step 2: 타입체크**
 
 ```bash
 npm run typecheck
 ```
-Expected: 에러 없음.
+Expected: 오류 없음.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git add lib/claude.ts app/api
-git commit -m "$(cat <<'EOF'
-Add /api/critique route with Zod validation + streaming Claude pass-through — server-side key protection, Korean errors
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add lib/store.ts
+git commit -m "Add Zustand app store — images, context, selection, streaming critiques, user stances"
 ```
 
 ---
 
-## Task 2.2: 클라이언트 스트리밍 훅 + 테스트
-
-> 페르소나 1명에 대해 `/api/critique`를 fetch하고 청크를 누적해 React state로 노출. STEP 4 페르소나 카드가 6개 동시에 사용.
+### Task C2: `components/app/Disclaimer.tsx`
 
 **Files:**
-- Create: `lib/streaming.ts`
-- Create: `lib/streaming.test.ts`
+- Create: `components/app/Disclaimer.tsx`
 
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```ts
-// lib/streaming.test.ts
-import { describe, it, expect, vi } from "vitest";
-import { renderHook, waitFor, act } from "@testing-library/react";
-import { useStreamingCritique } from "./streaming";
-
-function makeStreamResponse(chunks: string[]) {
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      for (const c of chunks) controller.enqueue(encoder.encode(c));
-      controller.close();
-    },
-  });
-  return new Response(stream, { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-}
-
-describe("useStreamingCritique", () => {
-  it("청크가 누적되어 text로 노출되고 done이 true가 된다", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(makeStreamResponse(["안녕", " ", "디자이너"]));
-    const { result } = renderHook(() =>
-      useStreamingCritique({
-        personaId: "toss-po",
-        images: [{ name: "a.png", dataUrl: "data:image/png;base64,iVBOR" }],
-        context: { kind: "실무 출시작", problem: "x", role: "PD 단독", proud: "" },
-      })
-    );
-    await waitFor(() => expect(result.current.done).toBe(true), { timeout: 1000 });
-    expect(result.current.text).toBe("안녕 디자이너");
-    expect(result.current.error).toBeNull();
-  });
-
-  it("HTTP 400이면 error에 메시지가 들어온다", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "이미지를 한 장 이상 올려주세요." }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      })
-    );
-    const { result } = renderHook(() =>
-      useStreamingCritique({
-        personaId: "toss-po",
-        images: [],
-        context: { kind: "", problem: "", role: "", proud: "" },
-      })
-    );
-    await waitFor(() => expect(result.current.error).not.toBeNull(), { timeout: 1000 });
-    expect(result.current.error).toContain("이미지를 한 장 이상");
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- lib/streaming.test.ts
-```
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: `lib/streaming.ts` 구현**
-
-```ts
-/**
- * Role: 클라이언트에서 /api/critique 한 호출의 텍스트 델타를 누적해 React state로 노출
- * Key Features: fetch ReadableStream → TextDecoder → setState. 페르소나당 1 인스턴스.
- * Dependencies: react
- * Notes: 컴포넌트 언마운트 시 AbortController로 요청 취소. 페이지 이탈 시 토큰 낭비 방지.
- */
-"use client";
-
-import { useEffect, useState } from "react";
-import type { UploadedImage, ContextAnswers } from "./store";
-
-type Args = {
-  personaId: string;
-  images: UploadedImage[];
-  context: ContextAnswers;
-};
-
-export function useStreamingCritique({ personaId, images, context }: Args) {
-  const [text, setText] = useState("");
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const res = await fetch("/api/critique", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ personaId, images, context }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          if (!cancelled) {
-            setError(body?.error ?? `요청에 실패했습니다 (${res.status}).`);
-            setDone(true);
-          }
-          return;
-        }
-
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder();
-        while (true) {
-          const { done: streamDone, value } = await reader.read();
-          if (streamDone) break;
-          if (cancelled) return;
-          setText((prev) => prev + decoder.decode(value, { stream: true }));
-        }
-        if (!cancelled) setDone(true);
-      } catch (err) {
-        if (cancelled) return;
-        if ((err as Error).name === "AbortError") return;
-        setError((err as Error).message ?? "크리틱 생성 중 오류가 발생했습니다.");
-        setDone(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [personaId]);   // 페르소나 단위 1회 호출. images/context 변동은 새 페이지 진입 시만 발생.
-
-  return { text, done, error };
-}
-```
-
-- [ ] **Step 4: 테스트 통과 확인**
-
-```bash
-npm test -- lib/streaming.test.ts
-```
-Expected: 2 passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/streaming.ts lib/streaming.test.ts
-git commit -m "$(cat <<'EOF'
-Add useStreamingCritique hook — accumulates server text chunks per persona, abortable on unmount
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
-```
-
----
-
-# Phase 3 — STEP 1: 랜딩
-
-## Task 3.1: `Disclaimer` 컴포넌트 + 페르소나 라벨 노출
-
-**Files:**
-- Create: `components/Disclaimer.tsx`
-- Create: `components/Disclaimer.test.tsx`
-
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```tsx
-// components/Disclaimer.test.tsx
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { Disclaimer } from "./Disclaimer";
-
-describe("Disclaimer", () => {
-  it("spec §2.2 디스클레이머 문구를 노출", () => {
-    render(<Disclaimer />);
-    expect(screen.getByText(/공개된 디자인 철학과 블로그/)).toBeInTheDocument();
-    expect(screen.getByText(/실제 해당 회사 또는 직원의 의견을 대변하지 않습니다/)).toBeInTheDocument();
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- components/Disclaimer.test.tsx
-```
-Expected: FAIL.
-
-- [ ] **Step 3: `components/Disclaimer.tsx` 구현**
+- [ ] **Step 1: 작성**
 
 ```tsx
 /**
- * Role: 페르소나가 가상 인물임을 알리는 디스클레이머 — STEP 1, STEP 3 양쪽에서 노출
- * Key Features: spec §2.2 문구 박제. 회사 로고/색/폰트 차용 금지 원칙의 가시 표현.
- * Dependencies: 없음
+ * Role: 풀이 2 디스클레이머 (spec §2.2)
+ * Key Features: 랜딩과 페르소나 선택 화면에 반복 노출
  */
-export function Disclaimer() {
+export function Disclaimer({ className }: { className?: string }) {
   return (
-    <p className="text-sm text-text-muted leading-relaxed">
-      각 회사의 공개된 디자인 철학과 블로그/컨퍼런스 발언을 기반으로 재구성한
-      가상의 페르소나입니다. 실제 해당 회사 또는 직원의 의견을 대변하지 않습니다.
+    <p className={`text-xs text-[var(--color-text-muted)] ${className ?? ''}`}>
+      각 회사의 공개된 디자인 철학과 블로그/컨퍼런스 발언을 기반으로 재구성한 가상의 페르소나입니다.
+      실제 해당 회사 또는 직원의 의견을 대변하지 않습니다.
     </p>
   );
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [ ] **Step 2: 커밋**
 
 ```bash
-npm test -- components/Disclaimer.test.tsx
-```
-Expected: 1 passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add components/Disclaimer.tsx components/Disclaimer.test.tsx
-git commit -m "$(cat <<'EOF'
-Add Disclaimer component — spec §2.2 fictional-persona notice, reusable across STEP 1 and STEP 3
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add components/app/Disclaimer.tsx
+git commit -m "Add Disclaimer component — pool 2 required notice"
 ```
 
 ---
 
-## Task 3.2: `ImageDropzone` 컴포넌트 (다중 업로드 + base64 변환)
+### Task C3: `components/app/DropZone.tsx` + 최소 행동 테스트
 
 **Files:**
-- Create: `components/ImageDropzone.tsx`
-- Create: `components/ImageDropzone.test.tsx`
+- Create: `components/app/DropZone.tsx`
+- Create: `components/app/DropZone.test.tsx`
 
-- [ ] **Step 1: 실패 테스트 먼저 — `onChange`가 base64 dataUrl을 가진 객체 배열을 받는지**
-
-```tsx
-// components/ImageDropzone.test.tsx
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { ImageDropzone } from "./ImageDropzone";
-
-describe("ImageDropzone", () => {
-  it("파일 선택 시 onChange에 base64 dataUrl이 담겨 호출된다", async () => {
-    const onChange = vi.fn();
-    render(<ImageDropzone onChange={onChange} />);
-    const file = new File(["dummy"], "a.png", { type: "image/png" });
-    const input = screen.getByLabelText(/스크린샷 선택/);
-    await userEvent.upload(input, file);
-    expect(onChange).toHaveBeenCalled();
-    const arg = onChange.mock.calls[0][0];
-    expect(arg).toHaveLength(1);
-    expect(arg[0].name).toBe("a.png");
-    expect(arg[0].dataUrl).toMatch(/^data:image\/png;base64,/);
-  });
-
-  it("이미지가 아닌 파일은 거부", async () => {
-    const onChange = vi.fn();
-    render(<ImageDropzone onChange={onChange} />);
-    const file = new File(["x"], "a.txt", { type: "text/plain" });
-    const input = screen.getByLabelText(/스크린샷 선택/);
-    await userEvent.upload(input, file);
-    expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(/이미지 파일만/);
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- components/ImageDropzone.test.tsx
-```
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: `components/ImageDropzone.tsx` 구현**
+- [ ] **Step 1: 컴포넌트 작성**
 
 ```tsx
 /**
- * Role: 다중 이미지 드래그앤드롭 + 클릭 업로드 — base64 dataUrl 배열로 부모에 전달
- * Key Features: 이미지 MIME 검증, FileReader → dataUrl, 8장 상한. 미리보기 썸네일.
- * Dependencies: react. 외부 라이브러리 없음 (의도적 — react-dropzone 의존성 회피).
- * Notes: spec §4.6 STEP 1 — 다중 허용은 1차 가안, UX는 구현 후 검토.
+ * Role: 스크린샷 드래그앤드롭 업로드 (STEP 1) — 다중 업로드 허용 (§4.6)
+ * Key Features: drop/click-to-select, base64 인코딩, object URL 미리보기
+ * Dependencies: @/lib/store
  */
-"use client";
+'use client';
 
-import { useState } from "react";
-import type { UploadedImage } from "@/lib/store";
+import * as React from 'react';
+import { useAppStore, type UploadedImage } from '@/lib/store';
 
-const MAX_FILES = 8;
-const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("이미지 읽기에 실패했습니다."));
-    reader.readAsDataURL(file);
-  });
+async function fileToUploaded(file: File): Promise<UploadedImage> {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+  const base64 = btoa(bin);
+  return {
+    mediaType: file.type as UploadedImage['mediaType'],
+    base64,
+    previewUrl: URL.createObjectURL(file),
+  };
 }
 
-export function ImageDropzone({ onChange }: { onChange: (images: UploadedImage[]) => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const [previews, setPreviews] = useState<UploadedImage[]>([]);
+export function DropZone() {
+  const images = useAppStore((s) => s.images);
+  const setImages = useAppStore((s) => s.setImages);
+  const [isDragging, setDragging] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
-  async function handleFiles(fileList: FileList | null) {
-    setError(null);
-    if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList).slice(0, MAX_FILES);
-    const invalid = files.find((f) => !ACCEPTED.includes(f.type));
-    if (invalid) {
-      setError("이미지 파일만 올릴 수 있어요 (PNG/JPEG/WebP/GIF).");
-      return;
-    }
-    const images = await Promise.all(
-      files.map(async (f) => ({ name: f.name, dataUrl: await readAsDataUrl(f) }))
-    );
-    setPreviews(images);
-    onChange(images);
-  }
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList) return;
+    const files = Array.from(fileList).filter((f) => ACCEPT.includes(f.type));
+    const uploaded = await Promise.all(files.map(fileToUploaded));
+    setImages([...images, ...uploaded]);
+  };
 
   return (
-    <div>
-      <label
-        htmlFor="screenshot-input"
-        className="flex flex-col items-center justify-center gap-2 p-10 border-2 border-dashed border-border rounded-card bg-surface cursor-pointer hover:border-accent transition-colors"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          void handleFiles(e.dataTransfer.files);
-        }}
-      >
-        <span className="text-text-primary font-medium">스크린샷을 여기로 끌어오거나 클릭해 선택</span>
-        <span className="text-sm text-text-muted">PNG / JPEG / WebP / GIF · 최대 8장</span>
-      </label>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label="스크린샷 업로드 영역"
+      onClick={() => inputRef.current?.click()}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        void handleFiles(e.dataTransfer.files);
+      }}
+      className={`flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-[var(--radius-lg)] border-2 border-dashed p-8 text-center transition-colors ${
+        isDragging ? 'border-[var(--color-accent)] bg-[var(--color-subtle)]' : 'border-[var(--color-border-strong)]'
+      }`}
+    >
       <input
-        id="screenshot-input"
+        ref={inputRef}
         type="file"
-        accept={ACCEPTED.join(",")}
+        accept={ACCEPT.join(',')}
         multiple
-        className="sr-only"
-        aria-label="스크린샷 선택"
+        className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}
       />
-      {error && (
-        <p role="alert" className="mt-2 text-sm text-danger">{error}</p>
-      )}
-      {previews.length > 0 && (
-        <ul className="mt-4 grid grid-cols-3 sm:grid-cols-4 gap-2">
-          {previews.map((p, i) => (
-            <li key={i} className="aspect-square overflow-hidden rounded-md border border-border bg-bg">
-              <img src={p.dataUrl} alt={p.name} className="w-full h-full object-cover" />
-            </li>
-          ))}
-        </ul>
+      <p className="text-sm text-[var(--color-text-secondary)]">
+        스크린샷을 여기에 드래그하거나 클릭해서 선택하세요 (여러 장 가능)
+      </p>
+      {images.length > 0 && (
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+          업로드됨: {images.length}장
+        </p>
       )}
     </div>
   );
 }
 ```
 
-- [ ] **Step 4: 테스트용 의존성 — `@testing-library/user-event` 추가 (없으면)**
+- [ ] **Step 2: 최소 행동 테스트 작성**
 
-```bash
-npm install -D @testing-library/user-event@^14
+```tsx
+// components/app/DropZone.test.tsx
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { DropZone } from './DropZone';
+import { useAppStore } from '@/lib/store';
+
+// jsdom에 URL.createObjectURL 없음 — polyfill
+beforeEach(() => {
+  (globalThis.URL as any).createObjectURL = () => 'blob:mock';
+  useAppStore.getState().reset();
+});
+
+describe('DropZone', () => {
+  it('파일 선택 시 store.images에 추가된다', async () => {
+    render(<DropZone />);
+    const file = new File(['hello'], 'a.png', { type: 'image/png' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await userEvent.upload(input, file);
+    expect(useAppStore.getState().images.length).toBe(1);
+    expect(screen.getByText(/업로드됨: 1장/)).toBeInTheDocument();
+  });
+});
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [ ] **Step 3: 실행 & PASS**
 
 ```bash
-npm test -- components/ImageDropzone.test.tsx
+npx vitest run components/app/DropZone.test.tsx
 ```
-Expected: 2 passed.
+Expected: PASS (1 test).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: 커밋**
 
 ```bash
-git add components/ImageDropzone.tsx components/ImageDropzone.test.tsx package.json package-lock.json
-git commit -m "$(cat <<'EOF'
-Add ImageDropzone — multi-file drag-drop + base64 conversion + thumbnail preview, MIME-validated
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add components/app/DropZone.tsx components/app/DropZone.test.tsx
+git commit -m "Add DropZone — multi-file drop/click upload, base64 store, minimal behavior test"
 ```
 
 ---
 
-## Task 3.3: `app/page.tsx` STEP 1 본 구현 — 헤드라인 + 드롭존 + 6명 라벨 + 다음 단계
+### Task C4: STEP 1 — `app/page.tsx` 정식 구현
 
 **Files:**
-- Modify: `app/page.tsx`
+- Rewrite: `app/page.tsx`
 
-- [ ] **Step 1: 페이지 본 구현으로 교체**
+- [ ] **Step 1: 랜딩 페이지 작성**
 
 ```tsx
 /**
- * Role: STEP 1 랜딩 — 완성작 들고 와요. 6명이 봐줍니다.
- * Key Features: 헤드라인 / 다중 이미지 드롭존 / 6명 라벨 노출 / 디스클레이머 / 다음 단계
- * Dependencies: components/ImageDropzone, components/Disclaimer, lib/store, lib/personas, next/navigation
- * Notes: 이미지 1장 이상 있어야 다음 단계 활성화.
+ * Role: STEP 1 랜딩 — 헤드라인 + 업로드 + 페르소나 이름 + 디스클레이머 + 진행 버튼
+ * Key Features: spec §4.6 STEP 1 박제 (부록 카피 1번, 6인 노출)
  */
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { ImageDropzone } from "@/components/ImageDropzone";
-import { Disclaimer } from "@/components/Disclaimer";
-import { Button } from "@/components/ui/button";
-import { useFlowStore } from "@/lib/store";
-import { PERSONAS } from "@/lib/personas";
+import Link from 'next/link';
+import { DropZone } from '@/components/app/DropZone';
+import { Disclaimer } from '@/components/app/Disclaimer';
+import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/lib/store';
+import { PERSONAS } from '@/lib/personas/definitions';
+import { PERSONA_IDS } from '@/lib/personas/types';
 
-export default function HomePage() {
-  const router = useRouter();
-  const images = useFlowStore((s) => s.images);
-  const setImages = useFlowStore((s) => s.setImages);
-  const canProceed = images.length > 0;
+export default function Home() {
+  const imageCount = useAppStore((s) => s.images.length);
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16 space-y-10">
-      <header className="space-y-3">
-        <h1 className="text-3xl sm:text-4xl font-semibold leading-tight">
-          완성작 들고 와요. 6명이 봐줍니다.
-        </h1>
-        <p className="text-text-secondary">
-          포트폴리오 완성작 스크린샷을 올리면, 6명의 회사 스타일 페르소나가
-          면접·리뷰에서 받을 만한 질문과 피드백을 줍니다.
-        </p>
-      </header>
+    <main className="mx-auto max-w-2xl px-6 py-20">
+      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+        완성작 들고 와요.<br />6명이 봐줍니다.
+      </h1>
+      <p className="mt-4 text-[var(--color-text-secondary)]">
+        포트폴리오 스크린샷을 올리면, 6인의 가상 리뷰어가 면접·리뷰에서 받을 만한 질문을 먼저 던져줍니다.
+      </p>
 
-      <ImageDropzone onChange={setImages} />
+      <section className="mt-10">
+        <DropZone />
+      </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-text-secondary">오늘의 리뷰어</h2>
-        <ul className="flex flex-wrap gap-2">
-          {PERSONAS.map((p) => (
-            <li key={p.id} className="px-3 py-1 rounded-full text-sm bg-accent-subtle text-accent">
-              {p.label}
+      <section className="mt-8">
+        <p className="text-sm font-medium">봐줄 6명</p>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {PERSONA_IDS.map((id) => (
+            <li
+              key={id}
+              className="rounded-full border px-3 py-1 text-xs text-[var(--color-text-secondary)]"
+            >
+              {PERSONAS[id].label}
             </li>
           ))}
         </ul>
       </section>
 
-      <Disclaimer />
+      <section className="mt-6">
+        <Disclaimer />
+      </section>
 
-      <div className="flex justify-end">
-        <Button
-          disabled={!canProceed}
-          onClick={() => router.push("/context")}
-        >
-          맥락 적기
-        </Button>
-      </div>
+      <section className="mt-10">
+        <Link href="/context" aria-disabled={imageCount === 0}>
+          <Button size="lg" disabled={imageCount === 0}>
+            다음 — 맥락 대화
+          </Button>
+        </Link>
+      </section>
     </main>
   );
 }
 ```
 
-- [ ] **Step 2: 수동 스모크 (개발 서버)**
+- [ ] **Step 2: dev에서 눈으로 확인 (업로드 → 버튼 활성화)**
 
 ```bash
 npm run dev
 ```
-Browser: `http://localhost:3000/`
-체크:
-- 헤드라인 + 6명 라벨 + 디스클레이머 보임
-- 이미지 1장 올리면 썸네일 노출 + "맥락 적기" 활성화
-- 클릭 시 `/context`로 이동(404여도 OK — 다음 task에서 만듦)
+Expected: `http://localhost:3000` — 헤드라인·업로드·6인 이름·디스클레이머·다음 버튼이 보인다. 스크린샷 드롭 시 "업로드됨: N장" 표시, "다음" 버튼 활성화. Ctrl+C 종료.
 
-- [ ] **Step 3: 타입 체크**
+- [ ] **Step 3: 커밋**
+
+```bash
+git add app/page.tsx
+git commit -m "Implement STEP 1 landing — headline, DropZone, persona chips, disclaimer, next CTA"
+```
+
+---
+
+### Task C5: `components/app/ContextForm.tsx` — STEP 2 4개 질문 폼
+
+**Files:**
+- Create: `components/app/ContextForm.tsx`
+
+- [ ] **Step 1: 컴포넌트 작성**
+
+```tsx
+/**
+ * Role: STEP 2 4개 맥락 질문 폼 (spec §4.2)
+ * Key Features: 객관식 2 + 자유 2, coreProblem 필수
+ * Dependencies: @/lib/critique/context-questions, @/lib/store
+ */
+'use client';
+
+import * as React from 'react';
+import { useRouter } from 'next/navigation';
+import { CONTEXT_QUESTIONS } from '@/lib/critique/context-questions';
+import type { ContextAnswer, RoleKind, WorkKind } from '@/lib/critique/types';
+import { useAppStore } from '@/lib/store';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+
+export function ContextForm() {
+  const router = useRouter();
+  const existing = useAppStore((s) => s.contextAnswers);
+  const setContextAnswers = useAppStore((s) => s.setContextAnswers);
+
+  const [workKind, setWorkKind] = React.useState<WorkKind>(existing?.workKind ?? 'launched');
+  const [coreProblem, setCoreProblem] = React.useState(existing?.coreProblem ?? '');
+  const [role, setRole] = React.useState<RoleKind>(existing?.role ?? 'pd-solo');
+  const [proudDecision, setProudDecision] = React.useState(existing?.proudDecision ?? '');
+
+  const canSubmit = coreProblem.trim().length > 0;
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    const next: ContextAnswer = { workKind, coreProblem: coreProblem.trim(), role, proudDecision: proudDecision.trim() };
+    setContextAnswers(next);
+    router.push('/personas');
+  };
+
+  const workKindQ = CONTEXT_QUESTIONS[0];
+  const coreProblemQ = CONTEXT_QUESTIONS[1];
+  const roleQ = CONTEXT_QUESTIONS[2];
+  const proudQ = CONTEXT_QUESTIONS[3];
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-8">
+      {workKindQ.kind === 'choice' && (
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-[var(--color-text-primary)]">{workKindQ.prompt}</legend>
+          <div className="flex flex-wrap gap-2">
+            {workKindQ.options.map((opt) => (
+              <label key={opt.value} className="cursor-pointer">
+                <input
+                  type="radio"
+                  name="workKind"
+                  value={opt.value}
+                  checked={workKind === opt.value}
+                  onChange={() => setWorkKind(opt.value)}
+                  className="peer sr-only"
+                />
+                <span className="inline-block rounded-full border px-3 py-1 text-sm peer-checked:border-[var(--color-accent)] peer-checked:bg-[var(--color-accent)] peer-checked:text-[var(--color-accent-foreground)]">
+                  {opt.label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {coreProblemQ.kind === 'text' && (
+        <div className="space-y-2">
+          <Label htmlFor="coreProblem">{coreProblemQ.prompt}</Label>
+          <Input
+            id="coreProblem"
+            maxLength={coreProblemQ.maxLength}
+            value={coreProblem}
+            onChange={(e) => setCoreProblem(e.target.value)}
+            placeholder="예) 카드 약관 동의 과정을 덜 까다롭게"
+            required
+          />
+        </div>
+      )}
+
+      {roleQ.kind === 'choice' && (
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-[var(--color-text-primary)]">{roleQ.prompt}</legend>
+          <div className="flex flex-wrap gap-2">
+            {roleQ.options.map((opt) => (
+              <label key={opt.value} className="cursor-pointer">
+                <input
+                  type="radio"
+                  name="role"
+                  value={opt.value}
+                  checked={role === opt.value}
+                  onChange={() => setRole(opt.value)}
+                  className="peer sr-only"
+                />
+                <span className="inline-block rounded-full border px-3 py-1 text-sm peer-checked:border-[var(--color-accent)] peer-checked:bg-[var(--color-accent)] peer-checked:text-[var(--color-accent-foreground)]">
+                  {opt.label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {proudQ.kind === 'text' && (
+        <div className="space-y-2">
+          <Label htmlFor="proudDecision">{proudQ.prompt}</Label>
+          <Textarea
+            id="proudDecision"
+            maxLength={proudQ.maxLength}
+            value={proudDecision}
+            onChange={(e) => setProudDecision(e.target.value)}
+            placeholder="(없으면 비워도 OK)"
+          />
+        </div>
+      )}
+
+      <Button type="submit" size="lg" disabled={!canSubmit}>
+        6명에게 보여주기
+      </Button>
+    </form>
+  );
+}
+```
+
+- [ ] **Step 2: 타입체크**
 
 ```bash
 npm run typecheck
 ```
-Expected: 에러 없음.
+Expected: 오류 없음.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git add app/page.tsx
-git commit -m "$(cat <<'EOF'
-Implement STEP 1 landing page — headline, multi-image dropzone, persona labels, disclaimer, gated next button
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add components/app/ContextForm.tsx
+git commit -m "Add ContextForm — 4 questions per §4.2 (2 choice + 2 text), required coreProblem"
 ```
 
 ---
 
-# Phase 4 — STEP 2: 맥락 대화
-
-## Task 4.1: `ContextForm` 컴포넌트 + 테스트 (4질문 §4.2)
-
-**Files:**
-- Create: `components/ContextForm.tsx`
-- Create: `components/ContextForm.test.tsx`
-
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```tsx
-// components/ContextForm.test.tsx
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { ContextForm } from "./ContextForm";
-
-describe("ContextForm", () => {
-  it("4개 질문 모두 노출", () => {
-    render(<ContextForm value={{ kind: "", problem: "", role: "", proud: "" }} onChange={() => {}} />);
-    expect(screen.getByLabelText(/이 작업의 종류/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/핵심 문제/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/본인의 역할/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/자랑하고 싶은 결정/)).toBeInTheDocument();
-  });
-
-  it("객관식 옵션은 spec §4.2와 일치", () => {
-    render(<ContextForm value={{ kind: "", problem: "", role: "", proud: "" }} onChange={() => {}} />);
-    const kind = screen.getByLabelText(/이 작업의 종류/) as HTMLSelectElement;
-    const opts = Array.from(kind.options).map((o) => o.value);
-    expect(opts).toEqual(["", "실무 출시작", "실무 컨셉", "사이드 프로젝트", "학생 작품", "리디자인", "기타"]);
-  });
-
-  it("입력 변경 시 onChange가 부분 업데이트로 호출된다", async () => {
-    const onChange = vi.fn();
-    render(<ContextForm value={{ kind: "", problem: "", role: "", proud: "" }} onChange={onChange} />);
-    await userEvent.type(screen.getByLabelText(/핵심 문제/), "약");
-    expect(onChange).toHaveBeenLastCalledWith({ problem: "약" });
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- components/ContextForm.test.tsx
-```
-Expected: FAIL — module not found.
-
-- [ ] **Step 3: `components/ContextForm.tsx` 구현**
-
-```tsx
-/**
- * Role: STEP 2 맥락 대화 4질문 폼 — 객관식 2 + 자유 2 (spec §4.2)
- * Key Features: 제어 컴포넌트. 부분 업데이트(onChange는 변경된 키만)로 부모 store에 반영.
- * Dependencies: components/ui/{input, textarea}, lib/store(타입)
- * Notes: 자랑하고 싶은 결정은 옵션. 종류·역할은 필수(부모에서 검증).
- */
-"use client";
-
-import type { ContextAnswers } from "@/lib/store";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-
-const KIND_OPTIONS = ["실무 출시작", "실무 컨셉", "사이드 프로젝트", "학생 작품", "리디자인", "기타"];
-const ROLE_OPTIONS = ["PD 단독", "PD + PM", "디자인팀 일부", "기타"];
-
-type Props = {
-  value: ContextAnswers;
-  onChange: (patch: Partial<ContextAnswers>) => void;
-};
-
-export function ContextForm({ value, onChange }: Props) {
-  return (
-    <form className="space-y-6">
-      <Field id="kind" label="이 작업의 종류는?">
-        <select
-          id="kind"
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-text-primary"
-          value={value.kind}
-          onChange={(e) => onChange({ kind: e.target.value })}
-        >
-          <option value="">선택해주세요</option>
-          {KIND_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      </Field>
-
-      <Field id="problem" label="이 작업이 해결하려던 핵심 문제는? (한 문장)" hint="50자 이내 권장">
-        <Input
-          id="problem"
-          maxLength={120}
-          value={value.problem}
-          onChange={(e) => onChange({ problem: e.target.value })}
-        />
-      </Field>
-
-      <Field id="role" label="본인의 역할은?">
-        <select
-          id="role"
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-text-primary"
-          value={value.role}
-          onChange={(e) => onChange({ role: e.target.value })}
-        >
-          <option value="">선택해주세요</option>
-          {ROLE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      </Field>
-
-      <Field id="proud" label="이 작업에서 가장 자랑하고 싶은 결정은? (없으면 비워도 OK)">
-        <Textarea
-          id="proud"
-          rows={3}
-          value={value.proud}
-          onChange={(e) => onChange({ proud: e.target.value })}
-        />
-      </Field>
-    </form>
-  );
-}
-
-function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="block text-sm font-medium text-text-primary">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-text-muted">{hint}</p>}
-    </div>
-  );
-}
-```
-
-- [ ] **Step 4: 테스트 통과 확인**
-
-```bash
-npm test -- components/ContextForm.test.tsx
-```
-Expected: 3 passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add components/ContextForm.tsx components/ContextForm.test.tsx
-git commit -m "$(cat <<'EOF'
-Add ContextForm — 4 spec §4.2 questions (2 selects + 2 free text), partial onChange updates
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
-```
-
----
-
-## Task 4.2: `app/context/page.tsx` 구현
+### Task C6: STEP 2 — `app/context/page.tsx`
 
 **Files:**
 - Create: `app/context/page.tsx`
 
-- [ ] **Step 1: 페이지 구현**
+- [ ] **Step 1: 페이지 작성**
 
 ```tsx
 /**
- * Role: STEP 2 맥락 대화 페이지 — 좌측 스샷 미리보기, 우측 4질문 폼
- * Key Features: kind·role 채워야 다음 단계. 새로고침해도 store가 sessionStorage에 보존.
- * Dependencies: components/ContextForm, lib/store, next/navigation
- * Notes: 모바일은 세로 스택 (Tailwind grid + breakpoint).
+ * Role: STEP 2 맥락 대화 화면 — 좌측 스샷 미리보기 + 우측 폼
+ * Key Features: 이미지 없으면 STEP 1로 돌려보낸다
  */
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { ContextForm } from "@/components/ContextForm";
-import { Button } from "@/components/ui/button";
-import { useFlowStore } from "@/lib/store";
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import { useAppStore } from '@/lib/store';
+import { ContextForm } from '@/components/app/ContextForm';
 
 export default function ContextPage() {
   const router = useRouter();
-  const images = useFlowStore((s) => s.images);
-  const context = useFlowStore((s) => s.context);
-  const setContext = useFlowStore((s) => s.setContext);
+  const images = useAppStore((s) => s.images);
 
-  // STEP 1 미통과 진입 보호
   useEffect(() => {
-    if (images.length === 0) router.replace("/");
+    if (images.length === 0) router.replace('/');
   }, [images.length, router]);
-
-  const canProceed = context.kind.length > 0 && context.role.length > 0;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
-      <h1 className="text-2xl font-semibold mb-8">맥락을 한 번만 알려줘요</h1>
+      <h1 className="text-xl font-semibold">맥락 한 번 나눠볼까요</h1>
+      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+        면접·포트폴리오 리뷰에서 자주 받는 질문 4개예요. 미리 답해보는 것 자체가 리허설.
+      </p>
 
-      <div className="grid gap-10 md:grid-cols-[1fr_1.2fr]">
-        <aside className="space-y-3">
-          <h2 className="text-sm font-semibold text-text-secondary">올린 스크린샷</h2>
-          <ul className="grid grid-cols-2 gap-2">
-            {images.map((p, i) => (
-              <li key={i} className="aspect-square overflow-hidden rounded-md border border-border bg-bg">
-                <img src={p.dataUrl} alt={p.name} className="w-full h-full object-cover" />
-              </li>
+      <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_1.2fr]">
+        <section aria-label="업로드한 스크린샷">
+          <div className="grid grid-cols-2 gap-3">
+            {images.map((img, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={img.previewUrl}
+                alt={`업로드 ${i + 1}`}
+                className="aspect-square w-full rounded-[var(--radius-md)] border object-cover"
+              />
             ))}
-          </ul>
-        </aside>
-
-        <section>
-          <ContextForm value={context} onChange={setContext} />
+          </div>
         </section>
-      </div>
-
-      <div className="mt-10 flex justify-between">
-        <Button variant="ghost" onClick={() => router.push("/")}>이전</Button>
-        <Button disabled={!canProceed} onClick={() => router.push("/personas")}>
-          6명에게 보여주기
-        </Button>
+        <section aria-label="맥락 질문 폼">
+          <ContextForm />
+        </section>
       </div>
     </main>
   );
 }
 ```
 
-- [ ] **Step 2: 수동 스모크**
+- [ ] **Step 2: 빌드/dev 확인**
 
 ```bash
 npm run dev
 ```
-Flow: `/` → 이미지 업로드 → "맥락 적기" → `/context`에서 4질문 폼 보임. kind+role 선택 시 "6명에게 보여주기" 활성화. 새로고침해도 폼·이미지 보존.
+Expected: STEP 1에서 이미지 업로드 → "다음" 클릭 → `/context` 진입, 좌측 썸네일·우측 폼 노출. 폼 제출 → `/personas`로 이동(아직 페이지 없어 404 OK). 종료.
 
-- [ ] **Step 3: 타입 체크**
-
-```bash
-npm run typecheck
-```
-Expected: 에러 없음.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git add app/context
-git commit -m "$(cat <<'EOF'
-Implement STEP 2 context page — split layout with screenshot preview, gated by required kind+role
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add app/context/page.tsx
+git commit -m "Implement STEP 2 context page — thumbnails + ContextForm, bounce back if no images"
 ```
 
 ---
 
-# Phase 5 — STEP 3: 페르소나 선택 + 충돌 미리보기
-
-## Task 5.1: `PersonaCheckbox` + `ConflictPreview` 컴포넌트 + 테스트
+### Task C7: `components/app/PersonaPicker.tsx` + 최소 행동 테스트
 
 **Files:**
-- Create: `components/PersonaCheckbox.tsx`
-- Create: `components/ConflictPreview.tsx`
-- Create: `components/ConflictPreview.test.tsx`
+- Create: `components/app/PersonaPicker.tsx`
+- Create: `components/app/PersonaPicker.test.tsx`
 
-- [ ] **Step 1: 실패 테스트 먼저 — `ConflictPreview`만 (체크박스는 단순 래퍼)**
-
-```tsx
-// components/ConflictPreview.test.tsx
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { ConflictPreview } from "./ConflictPreview";
-
-describe("ConflictPreview", () => {
-  it("선택 0~1명이면 안내 메시지", () => {
-    render(<ConflictPreview selectedIds={[]} />);
-    expect(screen.getByText(/2명 이상 선택/)).toBeInTheDocument();
-  });
-
-  it("강한 충돌이 없으면 0쌍 메시지", () => {
-    render(<ConflictPreview selectedIds={["toss-po", "naver-spd"]} />);
-    expect(screen.getByText(/강한 충돌이 없는/)).toBeInTheDocument();
-  });
-
-  it("충돌이 있으면 N쌍과 대화적 톤", () => {
-    render(<ConflictPreview selectedIds={["toss-po", "woowa-cbo", "kakao-dc"]} />);
-    expect(screen.getByText(/강한 충돌 2쌍/)).toBeInTheDocument();
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- components/ConflictPreview.test.tsx
-```
-Expected: FAIL.
-
-- [ ] **Step 3: `components/PersonaCheckbox.tsx` 구현**
+- [ ] **Step 1: 컴포넌트 작성**
 
 ```tsx
 /**
- * Role: 페르소나 1명의 체크박스 카드 — 라벨, 핵심 렌즈, 질문 영역 노출
- * Key Features: 클릭 시 부모 onToggle. 키보드 접근(label htmlFor).
- * Dependencies: components/ui/checkbox, lib/personas(타입)
+ * Role: STEP 3 페르소나 선택 (6명, 디폴트 전원) — 강한 충돌 쌍 수 실시간 미리보기
+ * Key Features: 체크박스 + 충돌 수 뱃지, 매트릭스 룩업(§4.1 옵션 A)
+ * Dependencies: @/lib/personas, @/lib/conflict/lookup, @/lib/store
  */
-"use client";
+'use client';
 
-import type { Persona } from "@/lib/personas";
-import { Checkbox } from "@/components/ui/checkbox";
+import { PERSONA_IDS, type PersonaId } from '@/lib/personas/types';
+import { PERSONAS } from '@/lib/personas/definitions';
+import { activeConflictThemes } from '@/lib/conflict/lookup';
+import { useAppStore } from '@/lib/store';
+import { Checkbox } from '@/components/ui/checkbox';
 
-type Props = { persona: Persona; checked: boolean; onToggle: (id: string) => void };
+export function PersonaPicker() {
+  const selected = useAppStore((s) => s.selectedPersonas);
+  const setSelected = useAppStore((s) => s.setSelectedPersonas);
+  const strongCount = activeConflictThemes(selected).length;
 
-export function PersonaCheckbox({ persona, checked, onToggle }: Props) {
-  const id = `persona-${persona.id}`;
-  return (
-    <label
-      htmlFor={id}
-      className="flex gap-3 p-4 border border-border rounded-card bg-surface cursor-pointer hover:border-accent transition-colors"
-    >
-      <Checkbox id={id} checked={checked} onCheckedChange={() => onToggle(persona.id)} />
-      <div className="flex-1">
-        <div className="font-medium text-text-primary">{persona.label}</div>
-        <div className="text-sm text-text-secondary mt-0.5">{persona.firstLens}</div>
-        <div className="text-xs text-text-muted mt-2">{persona.questionDomain}</div>
-      </div>
-    </label>
-  );
-}
-```
-
-- [ ] **Step 4: `components/ConflictPreview.tsx` 구현**
-
-```tsx
-/**
- * Role: 선택된 페르소나 사이의 강한 충돌 쌍을 대화적 톤으로 미리보기
- * Key Features: spec §4.1 노출 톤. 매트릭스 룩업 결과의 첫 인상.
- * Dependencies: lib/conflicts, lib/personas
- */
-import { getStrongConflicts } from "@/lib/conflicts";
-import { getPersonaById } from "@/lib/personas";
-
-export function ConflictPreview({ selectedIds }: { selectedIds: string[] }) {
-  if (selectedIds.length < 2) {
-    return <p className="text-sm text-text-muted">2명 이상 선택하면 충돌 미리보기가 보여요.</p>;
-  }
-
-  const conflicts = getStrongConflicts(selectedIds);
-  if (conflicts.length === 0) {
-    return <p className="text-sm text-text-muted">강한 충돌이 없는 조합이에요. 조용한 리뷰가 될 거예요.</p>;
-  }
+  const toggle = (id: PersonaId) => {
+    if (selected.includes(id)) setSelected(selected.filter((x) => x !== id));
+    else setSelected([...selected, id]);
+  };
 
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-text-secondary">
-        선택한 페르소나 중 <strong className="text-text-primary">강한 충돌 {conflicts.length}쌍</strong>이 있어요. 이번 디자인에서도 그럴까요?
-      </p>
-      <ul className="text-sm text-text-muted space-y-1">
-        {conflicts.map((c) => {
-          const a = getPersonaById(c.a)!.label;
-          const b = getPersonaById(c.b)!.label;
+    <div>
+      <ul className="divide-y rounded-[var(--radius-lg)] border bg-[var(--color-surface)]">
+        {PERSONA_IDS.map((id) => {
+          const p = PERSONAS[id];
+          const checked = selected.includes(id);
           return (
-            <li key={`${c.a}-${c.b}`}>
-              · {a} ↔ {b} — {c.theme}
+            <li key={id} className="flex items-start gap-3 p-4">
+              <Checkbox
+                id={`persona-${id}`}
+                checked={checked}
+                onChange={() => toggle(id)}
+                aria-label={p.label}
+              />
+              <label htmlFor={`persona-${id}`} className="flex-1 cursor-pointer">
+                <div className="text-sm font-medium">{p.label}</div>
+                <div className="text-xs text-[var(--color-text-secondary)]">
+                  {p.firstLens} · {p.questionDomain}
+                </div>
+              </label>
             </li>
           );
         })}
       </ul>
+
+      <p
+        className="mt-4 text-sm text-[var(--color-text-secondary)]"
+        data-testid="conflict-preview"
+      >
+        {strongCount > 0
+          ? `선택한 페르소나 중 강한 충돌 ${strongCount}쌍이 있어요.`
+          : '선택한 페르소나들 사이에 강한 충돌은 없어요.'}
+      </p>
     </div>
   );
 }
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [ ] **Step 2: 최소 행동 테스트 작성**
 
-```bash
-npm test -- components/ConflictPreview.test.tsx
+```tsx
+// components/app/PersonaPicker.test.tsx
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { PersonaPicker } from './PersonaPicker';
+import { useAppStore } from '@/lib/store';
+
+beforeEach(() => useAppStore.getState().reset());
+
+describe('PersonaPicker', () => {
+  it('디폴트로 6명 전원 선택, 강한 충돌 5쌍 미리보기', () => {
+    render(<PersonaPicker />);
+    expect(screen.getByTestId('conflict-preview')).toHaveTextContent('5쌍');
+  });
+
+  it('토스 PO 체크 해제 시 충돌 쌍 수가 3쌍으로 줄어든다', async () => {
+    render(<PersonaPicker />);
+    const tossCheckbox = screen.getByLabelText('토스 스타일 PO');
+    await userEvent.click(tossCheckbox);
+    expect(screen.getByTestId('conflict-preview')).toHaveTextContent('3쌍');
+  });
+
+  it('모두 해제하면 "강한 충돌은 없어요" 문구', async () => {
+    const { setSelectedPersonas } = useAppStore.getState();
+    setSelectedPersonas([]);
+    render(<PersonaPicker />);
+    expect(screen.getByTestId('conflict-preview')).toHaveTextContent('없어요');
+  });
+});
 ```
-Expected: 3 passed.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 3: PASS 확인**
 
 ```bash
-git add components/PersonaCheckbox.tsx components/ConflictPreview.tsx components/ConflictPreview.test.tsx
-git commit -m "$(cat <<'EOF'
-Add PersonaCheckbox + ConflictPreview — STEP 3 selection cards and matrix-driven N-pair preview (spec §4.1 tone)
+npx vitest run components/app/PersonaPicker.test.tsx
+```
+Expected: PASS (3 tests).
 
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+- [ ] **Step 4: 커밋**
+
+```bash
+git add components/app/PersonaPicker.tsx components/app/PersonaPicker.test.tsx
+git commit -m "Add PersonaPicker — checkbox list + live strong-conflict count (matrix lookup)"
 ```
 
 ---
 
-## Task 5.2: `app/personas/page.tsx` 구현 (디폴트 6명 전체 선택)
+### Task C8: STEP 3 — `app/personas/page.tsx`
 
 **Files:**
 - Create: `app/personas/page.tsx`
 
-- [ ] **Step 1: 페이지 구현**
+- [ ] **Step 1: 페이지 작성**
 
 ```tsx
 /**
- * Role: STEP 3 페르소나 선택 페이지 — 6인 카드 + 충돌 미리보기 + 디스클레이머
- * Key Features: 첫 진입 시 6명 전체 선택(spec §4.6). 토글 가능. 1명 이상이면 진행.
- * Dependencies: components/{PersonaCheckbox, ConflictPreview, Disclaimer}, lib/{store, personas}
+ * Role: STEP 3 페르소나 선택 화면
+ * Key Features: PersonaPicker + Disclaimer + 다음 버튼(선택 최소 1명)
  */
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { PERSONAS, PERSONA_IDS } from "@/lib/personas";
-import { PersonaCheckbox } from "@/components/PersonaCheckbox";
-import { ConflictPreview } from "@/components/ConflictPreview";
-import { Disclaimer } from "@/components/Disclaimer";
-import { Button } from "@/components/ui/button";
-import { useFlowStore } from "@/lib/store";
+import { useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAppStore } from '@/lib/store';
+import { PersonaPicker } from '@/components/app/PersonaPicker';
+import { Disclaimer } from '@/components/app/Disclaimer';
+import { Button } from '@/components/ui/button';
 
 export default function PersonasPage() {
   const router = useRouter();
-  const images = useFlowStore((s) => s.images);
-  const context = useFlowStore((s) => s.context);
-  const selected = useFlowStore((s) => s.selectedPersonaIds);
-  const setSelected = useFlowStore((s) => s.setSelectedPersonaIds);
+  const contextAnswers = useAppStore((s) => s.contextAnswers);
+  const selected = useAppStore((s) => s.selectedPersonas);
 
   useEffect(() => {
-    if (images.length === 0 || !context.kind || !context.role) {
-      router.replace("/");
-      return;
-    }
-    if (selected.length === 0) setSelected(PERSONA_IDS);
-  }, [images.length, context.kind, context.role, selected.length, setSelected, router]);
-
-  const toggle = (id: string) =>
-    setSelected(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
-
-  const canProceed = selected.length > 0;
+    if (!contextAnswers) router.replace('/context');
+  }, [contextAnswers, router]);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 space-y-10">
-      <header>
-        <h1 className="text-2xl font-semibold">누구에게 보여줄까요?</h1>
-        <p className="text-text-secondary mt-2">
-          처음엔 6명 전체가 봅니다. 빼고 싶은 사람은 체크 해제하세요.
-        </p>
-      </header>
+    <main className="mx-auto max-w-2xl px-6 py-12">
+      <h1 className="text-xl font-semibold">누가 봐주면 좋을까요</h1>
+      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+        디폴트는 6명 전원이에요. 빼고 싶은 사람은 체크를 풀면 돼요.
+      </p>
 
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {PERSONAS.map((p) => (
-          <li key={p.id}>
-            <PersonaCheckbox persona={p} checked={selected.includes(p.id)} onToggle={toggle} />
-          </li>
-        ))}
-      </ul>
-
-      <section className="p-4 rounded-card bg-bg border border-border">
-        <ConflictPreview selectedIds={selected} />
+      <section className="mt-8">
+        <PersonaPicker />
       </section>
 
-      <Disclaimer />
+      <section className="mt-6">
+        <Disclaimer />
+      </section>
 
-      <div className="flex justify-between">
-        <Button variant="ghost" onClick={() => router.push("/context")}>이전</Button>
-        <Button disabled={!canProceed} onClick={() => router.push("/critique")}>
-          {selected.length}명에게 보여주기
-        </Button>
-      </div>
+      <section className="mt-10 flex gap-3">
+        <Link href="/result">
+          <Button size="lg" disabled={selected.length === 0}>
+            크리틱 받기
+          </Button>
+        </Link>
+      </section>
     </main>
   );
 }
 ```
 
-- [ ] **Step 2: 수동 스모크**
-
-체크: 첫 진입 시 6명 모두 체크됨. 체크 해제 → 충돌 미리보기 N쌍 숫자 갱신. 0명이면 다음 버튼 비활성.
-
-- [ ] **Step 3: 타입 체크 + 커밋**
+- [ ] **Step 2: 커밋**
 
 ```bash
-npm run typecheck
-git add app/personas
-git commit -m "$(cat <<'EOF'
-Implement STEP 3 personas page — default-all selection (spec §4.6), live conflict preview, disclaimer
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add app/personas/page.tsx
+git commit -m "Implement STEP 3 personas page — picker + disclaimer + next CTA (min 1 selected)"
 ```
 
 ---
 
-# Phase 6 — STEP 4: 크리틱 결과 (병렬 스트리밍)
-
-## Task 6.1: `PersonaCard` 컴포넌트 + 테스트
-
-> 한 페르소나의 스트리밍 결과를 렌더. 모델 출력은 markdown 비슷한 텍스트(헤딩+리스트). MVP는 별도 마크다운 파서 없이 텍스트로 노출 (whitespace-preserving). 추후 폴리시.
+### Task C9: `components/app/CritiqueCard.tsx` — STEP 4 페르소나 카드
 
 **Files:**
-- Create: `components/PersonaCard.tsx`
-- Create: `components/PersonaCard.test.tsx`
+- Create: `components/app/CritiqueCard.tsx`
 
-- [ ] **Step 1: 실패 테스트 먼저**
-
-```tsx
-// components/PersonaCard.test.tsx
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { PersonaCard } from "./PersonaCard";
-import { getPersonaById } from "@/lib/personas";
-
-describe("PersonaCard", () => {
-  it("로딩 중에는 페르소나 라벨과 스피너만 보인다", () => {
-    render(<PersonaCard persona={getPersonaById("toss-po")!} text="" done={false} error={null} />);
-    expect(screen.getByText(/토스 스타일 PO/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/생각 중/)).toBeInTheDocument();
-  });
-
-  it("텍스트가 들어오면 그대로 노출 + 페르소나 라벨", () => {
-    render(<PersonaCard persona={getPersonaById("woowa-cbo")!} text="🩺 한 줄 진단: 좋아" done={true} error={null} />);
-    expect(screen.getByText(/우아한형제들 스타일 CBO/)).toBeInTheDocument();
-    expect(screen.getByText(/좋아/)).toBeInTheDocument();
-  });
-
-  it("error가 있으면 에러 메시지 노출", () => {
-    render(<PersonaCard persona={getPersonaById("toss-po")!} text="" done={true} error="API 한도 초과" />);
-    expect(screen.getByRole("alert")).toHaveTextContent(/API 한도 초과/);
-  });
-});
-```
-
-- [ ] **Step 2: 실패 확인**
-
-```bash
-npm test -- components/PersonaCard.test.tsx
-```
-Expected: FAIL.
-
-- [ ] **Step 3: `components/PersonaCard.tsx` 구현**
+- [ ] **Step 1: 컴포넌트 작성**
 
 ```tsx
 /**
- * Role: 페르소나 1명의 크리틱 결과 카드 — 스트리밍 텍스트 + 라벨 + 에러/로딩 상태
- * Key Features: whitespace-pre-wrap으로 모델 마크다운 텍스트를 그대로 노출. 폴리시는 후속.
- * Dependencies: lib/personas(타입), components/ui/card
+ * Role: STEP 4 페르소나별 크리틱 카드 (스트리밍 텍스트 렌더)
+ * Key Features: LLM이 뱉는 JSON을 점진 파싱 — 완성 전엔 raw 프리뷰, 완성 후 구조화 렌더
+ * Dependencies: @/lib/personas, @/lib/critique/types
+ * Notes: JSON 파싱 실패 시 raw 텍스트 폴백 (디자인 원칙: 실패해도 침묵보단 대화)
  */
-"use client";
+'use client';
 
-import type { Persona } from "@/lib/personas";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { PersonaId } from '@/lib/personas/types';
+import { PERSONAS } from '@/lib/personas/definitions';
+import type { CritiqueCard as CardData } from '@/lib/critique/types';
+import { Card, CardBody, CardTitle } from '@/components/ui/card';
 
 type Props = {
-  persona: Persona;
+  personaId: PersonaId;
   text: string;
   done: boolean;
-  error: string | null;
+  error?: string;
 };
 
-export function PersonaCard({ persona, text, done, error }: Props) {
+function tryParse(text: string): CardData | null {
+  try {
+    const obj = JSON.parse(text.trim());
+    if (
+      obj &&
+      typeof obj.diagnosis === 'string' &&
+      Array.isArray(obj.questions) &&
+      Array.isArray(obj.suggestions)
+    ) {
+      return { personaId: '', ...obj };
+    }
+  } catch {}
+  return null;
+}
+
+export function CritiqueCardView({ personaId, text, done, error }: Props) {
+  const persona = PERSONAS[personaId];
+  const parsed = done ? tryParse(text) : null;
+
   return (
-    <Card className="bg-surface">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span>{persona.label}</span>
-          {!done && !error && (
-            <span aria-label="생각 중" className="inline-block h-2 w-2 rounded-full bg-accent animate-pulse" />
-          )}
-        </CardTitle>
-        <p className="text-xs text-text-muted">{persona.firstLens}</p>
-      </CardHeader>
-      <CardContent>
-        {error ? (
-          <p role="alert" className="text-sm text-danger">{error}</p>
-        ) : (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary">
-            {text || "..."}
+    <Card>
+      <CardTitle>{persona.label}</CardTitle>
+      {error ? (
+        <CardBody>
+          <p className="text-[var(--color-danger)]">크리틱을 불러오지 못했어요: {error}</p>
+        </CardBody>
+      ) : parsed ? (
+        <CardBody className="space-y-3">
+          <p>
+            <span className="mr-1">🩺</span>
+            <span className="font-medium text-[var(--color-text-primary)]">{parsed.diagnosis}</span>
           </p>
-        )}
-      </CardContent>
+          <div>
+            <p className="font-medium text-[var(--color-text-primary)]">❓ 질문</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-5">
+              {parsed.questions.map((q, i) => (
+                <li key={i}>{q}</li>
+              ))}
+            </ol>
+          </div>
+          <div>
+            <p className="font-medium text-[var(--color-text-primary)]">💡 제안</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {parsed.suggestions.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        </CardBody>
+      ) : (
+        <CardBody>
+          <pre className="whitespace-pre-wrap font-sans text-sm">{text || '...'}</pre>
+          {!done && <p className="mt-2 text-xs text-[var(--color-text-muted)]">쓰는 중…</p>}
+        </CardBody>
+      )}
     </Card>
   );
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 + 커밋**
+- [ ] **Step 2: 커밋**
 
 ```bash
-npm test -- components/PersonaCard.test.tsx
-npm run typecheck
-git add components/PersonaCard.tsx components/PersonaCard.test.tsx
-git commit -m "$(cat <<'EOF'
-Add PersonaCard — streaming text body + label header + loading/error states, no markdown parser yet
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add components/app/CritiqueCard.tsx
+git commit -m "Add CritiqueCardView — streaming text with post-stream JSON parse + raw fallback"
 ```
 
 ---
 
-## Task 6.2: `PersonaCardConnected` — store에서 입력 가져와 훅 호출 + 카드 렌더
+### Task C10: `components/app/ConflictCard.tsx` + **⭐ 최소 행동 테스트 (USP 핵심)**
+
+⭐ **spec §4.6 STEP 5 / 의사결정 #15** — "당신은 어느 쪽?" 입력칸은 USP 핵심. 이 테스트는 절대 누락 금지.
 
 **Files:**
-- Create: `components/PersonaCardConnected.tsx`
+- Create: `components/app/ConflictCard.tsx`
+- Create: `components/app/ConflictCard.test.tsx`
 
-- [ ] **Step 1: 구현 (단순 wiring — 단위 테스트 없이 통합 스모크로 검증)**
+- [ ] **Step 1: 컴포넌트 작성**
 
 ```tsx
 /**
- * Role: 페르소나 1명에 대해 store 입력으로 useStreamingCritique 호출 → PersonaCard 렌더
- * Key Features: STEP 4 페이지가 6번 마운트 → 6번 병렬 호출. AbortController는 훅 내부.
- * Dependencies: lib/{store, streaming, personas}, components/PersonaCard
+ * Role: STEP 5 충돌 카드 — 테마 + 두 페르소나 입장 + "당신은 어느 쪽?" 입력칸 (⭐ USP 핵심)
+ * Key Features: 입력은 store에 저장 (DB 없음, 새로고침 시 휘발), 선택적 응답
+ * Dependencies: @/lib/personas, @/lib/conflict/themes, @/lib/store
  */
-"use client";
+'use client';
 
-import { getPersonaById } from "@/lib/personas";
-import { useFlowStore } from "@/lib/store";
-import { useStreamingCritique } from "@/lib/streaming";
-import { PersonaCard } from "./PersonaCard";
+import { PERSONAS } from '@/lib/personas/definitions';
+import type { ConflictTheme } from '@/lib/conflict/themes';
+import { useAppStore, pairKeyOf } from '@/lib/store';
+import { Card, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
-export function PersonaCardConnected({ personaId }: { personaId: string }) {
-  const images = useFlowStore((s) => s.images);
-  const context = useFlowStore((s) => s.context);
-  const persona = getPersonaById(personaId)!;
-  const { text, done, error } = useStreamingCritique({ personaId, images, context });
-  return <PersonaCard persona={persona} text={text} done={done} error={error} />;
-}
-```
-
-- [ ] **Step 2: 타입 체크 + 커밋**
-
-```bash
-npm run typecheck
-git add components/PersonaCardConnected.tsx
-git commit -m "$(cat <<'EOF'
-Add PersonaCardConnected — wires store + streaming hook to one PersonaCard, lets STEP 4 fan out 6×
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
-```
-
----
-
-## Task 6.3: `app/critique/page.tsx` STEP 4 부분 (그리드 + 6 카드)
-
-> STEP 5 충돌 카드는 다음 phase에서 같은 페이지에 추가.
-
-**Files:**
-- Create: `app/critique/page.tsx`
-
-- [ ] **Step 1: 페이지 구현 (STEP 4까지)**
-
-```tsx
-/**
- * Role: STEP 4 + STEP 5 결과 페이지 — 페르소나 카드 그리드, 충돌 카드는 Phase 7에서 아래 추가
- * Key Features: 모바일 세로/데스크톱 2열. 가드: 입력 누락 시 첫 단계로.
- * Dependencies: components/PersonaCardConnected, lib/store
- */
-"use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useFlowStore } from "@/lib/store";
-import { PersonaCardConnected } from "@/components/PersonaCardConnected";
-import { Button } from "@/components/ui/button";
-
-export default function CritiquePage() {
-  const router = useRouter();
-  const images = useFlowStore((s) => s.images);
-  const context = useFlowStore((s) => s.context);
-  const selected = useFlowStore((s) => s.selectedPersonaIds);
-
-  useEffect(() => {
-    if (images.length === 0 || !context.kind || !context.role || selected.length === 0) {
-      router.replace("/");
-    }
-  }, [images.length, context.kind, context.role, selected.length, router]);
+export function ConflictCard({ theme }: { theme: ConflictTheme }) {
+  const [a, b] = theme.pair;
+  const key = pairKeyOf(a, b);
+  const value = useAppStore((s) => s.userStances[key] ?? '');
+  const setUserStance = useAppStore((s) => s.setUserStance);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12 space-y-12">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{selected.length}명의 동료가 봤어요</h1>
-          <p className="text-sm text-text-secondary mt-2">평가가 아니라 동료의 피드백입니다.</p>
+    <Card data-testid={`conflict-${key}`}>
+      <CardTitle>{theme.theme}</CardTitle>
+      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{theme.framing}</p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-[var(--radius-md)] border p-3">
+          <p className="text-xs font-medium">{PERSONAS[a].label}</p>
+          <p className="mt-1 text-sm">{theme.stances[a]}</p>
         </div>
-        <Button variant="ghost" onClick={() => router.push("/personas")}>인원 바꾸기</Button>
-      </header>
+        <div className="rounded-[var(--radius-md)] border p-3">
+          <p className="text-xs font-medium">{PERSONAS[b].label}</p>
+          <p className="mt-1 text-sm">{theme.stances[b]}</p>
+        </div>
+      </div>
 
-      <section
-        aria-label="페르소나 크리틱"
-        className="grid gap-4 md:grid-cols-2"
-      >
-        {selected.map((id) => (
-          <PersonaCardConnected key={id} personaId={id} />
-        ))}
-      </section>
-
-      {/* STEP 5 충돌 카드는 Phase 7 Task 7.2에서 이 아래에 추가 */}
-    </main>
+      <div className="mt-5">
+        <Label htmlFor={`stance-${key}`}>당신은 어느 쪽?</Label>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          면접·포트폴리오 리뷰에서 받을 질문이에요. 답하지 않아도 괜찮아요.
+        </p>
+        <Textarea
+          id={`stance-${key}`}
+          className="mt-2"
+          placeholder="이 디자인에선 ___ 쪽으로 기울었어요. 이유는 ___"
+          value={value}
+          onChange={(e) => setUserStance(key, e.target.value)}
+        />
+      </div>
+    </Card>
   );
 }
 ```
 
-- [ ] **Step 2: 수동 스모크 (실 API 호출)**
-
-```bash
-echo "ANTHROPIC_API_KEY=실제_키" > .env.local
-npm run dev
-```
-Flow: 첫 단계부터 끝까지 → 6명의 카드가 동시에 스트리밍되며 각자 한 줄 진단 → 질문 3 → 제안이 들어차는지 확인.
-
-체크:
-- 6 카드 동시 스트리밍 (네트워크 탭에 6개의 `/api/critique` POST)
-- 각 카드 약 200자 가드레일 안에 들어옴
-- 페르소나별 톤 차이 (PO는 시선·시각 위계, CBO는 감성 등)
-
-- [ ] **Step 3: 타입 체크 + 커밋**
-
-```bash
-npm run typecheck
-git add app/critique/page.tsx
-git commit -m "$(cat <<'EOF'
-Implement STEP 4 critique grid — N PersonaCardConnected children fire parallel /api/critique streams
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
-```
-
----
-
-# Phase 7 — STEP 5: 충돌 뷰 + 자기 표현 리허설 ⭐USP
-
-> spec §4.6 STEP 5 — "당신은 어느 쪽?" 입력칸이 USP 핵심. 매트릭스 룩업으로 자동 트리거.
-
-## Task 7.1: `ConflictCard` 컴포넌트 + 테스트
-
-**Files:**
-- Create: `components/ConflictCard.tsx`
-- Create: `components/ConflictCard.test.tsx`
-
-- [ ] **Step 1: 실패 테스트 먼저**
+- [ ] **Step 2: USP 회귀 방지 테스트 작성**
 
 ```tsx
-// components/ConflictCard.test.tsx
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { ConflictCard } from "./ConflictCard";
-import { STRONG_CONFLICTS } from "@/lib/conflicts";
+// components/app/ConflictCard.test.tsx
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ConflictCard } from './ConflictCard';
+import { CONFLICT_THEMES } from '@/lib/conflict/themes';
+import { useAppStore, pairKeyOf } from '@/lib/store';
 
-const sample = STRONG_CONFLICTS[0]; // toss-po x woowa-cbo
+beforeEach(() => useAppStore.getState().reset());
 
-describe("ConflictCard", () => {
-  it("테마, 두 페르소나 입장, '당신은 어느 쪽?' 라벨이 모두 보인다", () => {
-    render(<ConflictCard conflict={sample} value="" onChange={() => {}} />);
-    expect(screen.getByText(sample.theme)).toBeInTheDocument();
-    expect(screen.getByText(sample.stanceA)).toBeInTheDocument();
-    expect(screen.getByText(sample.stanceB)).toBeInTheDocument();
-    expect(screen.getByLabelText(/당신은 어느 쪽/)).toBeInTheDocument();
+describe('ConflictCard (⭐ USP 핵심)', () => {
+  const theme = CONFLICT_THEMES[0]; // 토스 ↔ 우아한
+
+  it('"당신은 어느 쪽?" 라벨과 textarea가 렌더된다', () => {
+    render(<ConflictCard theme={theme} />);
+    expect(screen.getByLabelText('당신은 어느 쪽?')).toBeInTheDocument();
   });
 
-  it("입력 변경 시 onChange 호출", async () => {
-    const onChange = vi.fn();
-    render(<ConflictCard conflict={sample} value="" onChange={onChange} />);
-    await userEvent.type(screen.getByLabelText(/당신은 어느 쪽/), "전");
-    expect(onChange).toHaveBeenLastCalledWith("전");
+  it('두 페르소나의 한 줄 입장이 렌더된다', () => {
+    render(<ConflictCard theme={theme} />);
+    expect(screen.getByText(theme.stances[theme.pair[0]])).toBeInTheDocument();
+    expect(screen.getByText(theme.stances[theme.pair[1]])).toBeInTheDocument();
+  });
+
+  it('입력값이 store.userStances에 저장된다 (pair key 기반)', async () => {
+    render(<ConflictCard theme={theme} />);
+    const ta = screen.getByLabelText('당신은 어느 쪽?');
+    await userEvent.type(ta, '감성 쪽에 가까움');
+    const key = pairKeyOf(theme.pair[0], theme.pair[1]);
+    expect(useAppStore.getState().userStances[key]).toBe('감성 쪽에 가까움');
   });
 });
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [ ] **Step 3: PASS 확인**
 
 ```bash
-npm test -- components/ConflictCard.test.tsx
+npx vitest run components/app/ConflictCard.test.tsx
 ```
-Expected: FAIL.
+Expected: PASS (3 tests).
 
-- [ ] **Step 3: `components/ConflictCard.tsx` 구현**
-
-```tsx
-/**
- * Role: 강한 충돌 1쌍의 카드 — 테마, 두 페르소나 입장, 자기 표현 리허설 입력칸
- * Key Features: spec §4.6 STEP 5 박제. 입력은 부모 store에 보관(클라이언트만, DB 없음).
- * Dependencies: lib/conflicts(타입), lib/personas, components/ui/{card, textarea}
- */
-"use client";
-
-import type { StrongConflict } from "@/lib/conflicts";
-import { getPersonaById } from "@/lib/personas";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-
-type Props = {
-  conflict: StrongConflict;
-  value: string;
-  onChange: (v: string) => void;
-};
-
-export function ConflictCard({ conflict, value, onChange }: Props) {
-  const a = getPersonaById(conflict.a)!;
-  const b = getPersonaById(conflict.b)!;
-  const inputId = `rehearsal-${conflict.a}-${conflict.b}`;
-
-  return (
-    <Card className="bg-warm-subtle border-warm/30">
-      <CardHeader>
-        <CardTitle className="text-warm">{conflict.theme}</CardTitle>
-        <p className="text-sm text-text-secondary">{conflict.framing}</p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Stance who={a.label} text={conflict.stanceA} />
-          <Stance who={b.label} text={conflict.stanceB} />
-        </div>
-        <div className="space-y-2">
-          <label htmlFor={inputId} className="block text-sm font-medium text-text-primary">
-            당신은 어느 쪽? (답하지 않아도 됨)
-          </label>
-          <Textarea
-            id={inputId}
-            rows={3}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="면접에서 이 질문을 받는다면 어떻게 답할지 미리 적어보세요."
-          />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Stance({ who, text }: { who: string; text: string }) {
-  return (
-    <div className="p-3 rounded-md border border-border bg-surface">
-      <div className="text-xs font-semibold text-text-secondary mb-1">{who}</div>
-      <p className="text-sm text-text-primary leading-relaxed">{text}</p>
-    </div>
-  );
-}
-```
-
-- [ ] **Step 4: 테스트 통과 + 커밋**
+- [ ] **Step 4: 커밋**
 
 ```bash
-npm test -- components/ConflictCard.test.tsx
-npm run typecheck
-git add components/ConflictCard.tsx components/ConflictCard.test.tsx
-git commit -m "$(cat <<'EOF'
-Add ConflictCard — STEP 5 USP card with theme, two stances, '당신은 어느 쪽?' rehearsal textarea
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add components/app/ConflictCard.tsx components/app/ConflictCard.test.tsx
+git commit -m "Add ConflictCard with '당신은 어느 쪽?' input (⭐ USP core) — stance stored by pair key + regression test"
 ```
 
 ---
 
-## Task 7.2: `app/critique/page.tsx`에 STEP 5 충돌 섹션 추가
+### Task C11: 스트리밍 훅 `lib/useCritiqueStreams.ts` — 선택 페르소나별 병렬 fetch
 
 **Files:**
-- Modify: `app/critique/page.tsx`
+- Create: `lib/useCritiqueStreams.ts`
 
-- [ ] **Step 1: STEP 5 섹션 추가 (페이지 하단)**
+- [ ] **Step 1: 훅 작성**
 
-```tsx
-// app/critique/page.tsx — Phase 7로 갱신된 전체
-"use client";
+```ts
+/**
+ * Role: 선택 페르소나별로 /api/critique 병렬 호출 + 스트리밍 청크를 store에 적재
+ * Key Features: AbortController 관리, 실패 시 error 마킹
+ * Dependencies: @/lib/store
+ */
+'use client';
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useFlowStore } from "@/lib/store";
-import { PersonaCardConnected } from "@/components/PersonaCardConnected";
-import { ConflictCard } from "@/components/ConflictCard";
-import { Button } from "@/components/ui/button";
-import { getStrongConflicts, conflictKey } from "@/lib/conflicts";
+import { useEffect, useRef } from 'react';
+import type { PersonaId } from '@/lib/personas/types';
+import { useAppStore } from '@/lib/store';
 
-export default function CritiquePage() {
-  const router = useRouter();
-  const images = useFlowStore((s) => s.images);
-  const context = useFlowStore((s) => s.context);
-  const selected = useFlowStore((s) => s.selectedPersonaIds);
-  const rehearsalAnswers = useFlowStore((s) => s.rehearsalAnswers);
-  const setRehearsalAnswer = useFlowStore((s) => s.setRehearsalAnswer);
+async function runOne(
+  personaId: PersonaId,
+  body: unknown,
+  signal: AbortSignal,
+  onChunk: (c: string) => void,
+): Promise<void> {
+  const res = await fetch('/api/critique', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const msg = await res.text().catch(() => 'unknown');
+    throw new Error(`${res.status} ${msg}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onChunk(decoder.decode(value));
+  }
+}
+
+export function useCritiqueStreams() {
+  const selected = useAppStore((s) => s.selectedPersonas);
+  const images = useAppStore((s) => s.images);
+  const contextAnswers = useAppStore((s) => s.contextAnswers);
+  const appendChunk = useAppStore((s) => s.appendCritiqueChunk);
+  const markDone = useAppStore((s) => s.markCritiqueDone);
+  const markError = useAppStore((s) => s.markCritiqueError);
+
+  const started = useRef(false);
 
   useEffect(() => {
-    if (images.length === 0 || !context.kind || !context.role || selected.length === 0) {
-      router.replace("/");
-    }
-  }, [images.length, context.kind, context.role, selected.length, router]);
+    if (started.current) return;
+    if (!contextAnswers || images.length === 0 || selected.length === 0) return;
+    started.current = true;
 
-  const conflicts = getStrongConflicts(selected);
+    const controller = new AbortController();
+
+    for (const id of selected) {
+      const body = {
+        personaId: id,
+        contextAnswers,
+        images: images.map((i) => ({ mediaType: i.mediaType, base64: i.base64 })),
+      };
+      runOne(id, body, controller.signal, (chunk) => appendChunk(id, chunk))
+        .then(() => markDone(id))
+        .catch((err) => markError(id, err instanceof Error ? err.message : String(err)));
+    }
+
+    return () => controller.abort();
+  }, [selected, images, contextAnswers, appendChunk, markDone, markError]);
+}
+```
+
+- [ ] **Step 2: 타입체크**
+
+```bash
+npm run typecheck
+```
+Expected: 오류 없음.
+
+- [ ] **Step 3: 커밋**
+
+```bash
+git add lib/useCritiqueStreams.ts
+git commit -m "Add useCritiqueStreams hook — parallel fetch per selected persona, pipe chunks into store"
+```
+
+---
+
+### Task C12: STEP 4 + STEP 5 — `app/result/page.tsx`
+
+**Files:**
+- Create: `app/result/page.tsx`
+
+- [ ] **Step 1: 페이지 작성**
+
+```tsx
+/**
+ * Role: STEP 4(크리틱 카드 그리드) + STEP 5(충돌 카드) — 같은 페이지 (spec §4.6)
+ * Key Features: 스트리밍 훅 가동, 선택 페르소나 기준 충돌 카드 자동 노출
+ * Dependencies: @/lib/useCritiqueStreams, @/lib/conflict/lookup
+ */
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAppStore } from '@/lib/store';
+import { useCritiqueStreams } from '@/lib/useCritiqueStreams';
+import { CritiqueCardView } from '@/components/app/CritiqueCard';
+import { ConflictCard } from '@/components/app/ConflictCard';
+import { activeConflictThemes } from '@/lib/conflict/lookup';
+import type { PersonaId } from '@/lib/personas/types';
+
+export default function ResultPage() {
+  const router = useRouter();
+  const selected = useAppStore((s) => s.selectedPersonas);
+  const images = useAppStore((s) => s.images);
+  const contextAnswers = useAppStore((s) => s.contextAnswers);
+  const critiques = useAppStore((s) => s.critiques);
+
+  useEffect(() => {
+    if (images.length === 0) router.replace('/');
+    else if (!contextAnswers) router.replace('/context');
+    else if (selected.length === 0) router.replace('/personas');
+  }, [images.length, contextAnswers, selected.length, router]);
+
+  useCritiqueStreams();
+
+  const themes = activeConflictThemes(selected);
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12 space-y-12">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{selected.length}명의 동료가 봤어요</h1>
-          <p className="text-sm text-text-secondary mt-2">평가가 아니라 동료의 피드백입니다.</p>
-        </div>
-        <Button variant="ghost" onClick={() => router.push("/personas")}>인원 바꾸기</Button>
-      </header>
+    <main className="mx-auto max-w-5xl px-6 py-12">
+      <h1 className="text-xl font-semibold">6명의 크리틱</h1>
 
-      <section aria-label="페르소나 크리틱" className="grid gap-4 md:grid-cols-2">
-        {selected.map((id) => (
-          <PersonaCardConnected key={id} personaId={id} />
-        ))}
+      <section className="mt-6 grid gap-4 md:grid-cols-2">
+        {selected.map((id) => {
+          const c = critiques[id] ?? { text: '', done: false };
+          return (
+            <CritiqueCardView
+              key={id}
+              personaId={id as PersonaId}
+              text={c.text}
+              done={c.done}
+              error={c.error}
+            />
+          );
+        })}
       </section>
 
-      {conflicts.length > 0 && (
-        <section aria-labelledby="conflict-heading" className="space-y-4">
-          <header className="space-y-1">
-            <h2 id="conflict-heading" className="text-xl font-semibold">충돌 관점 — 자기 표현의 리허설</h2>
-            <p className="text-sm text-text-secondary">
-              두 동료가 서로 다른 우선순위를 봅니다. 면접·리뷰에서 자주 받는 질문이에요. 미리 답해보세요.
-            </p>
-          </header>
-          <div className="grid gap-4">
-            {conflicts.map((c) => {
-              const key = conflictKey(c.a, c.b);
-              return (
-                <ConflictCard
-                  key={key}
-                  conflict={c}
-                  value={rehearsalAnswers[key] ?? ""}
-                  onChange={(v) => setRehearsalAnswer(key, v)}
-                />
-              );
-            })}
+      {themes.length > 0 && (
+        <section className="mt-14">
+          <h2 className="text-lg font-semibold">부딪히는 지점 — 당신의 차례</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            강한 충돌이 생기는 쌍이에요. 면접·리뷰에서 받을 질문을 미리 답해보세요.
+          </p>
+          <div className="mt-6 space-y-4">
+            {themes.map((t) => (
+              <ConflictCard key={`${t.pair[0]}|${t.pair[1]}`} theme={t} />
+            ))}
           </div>
         </section>
       )}
@@ -2950,161 +3286,227 @@ export default function CritiquePage() {
 }
 ```
 
-- [ ] **Step 2: 수동 스모크**
-
-체크:
-- 6명 모두 선택 시 STEP 4 그리드 + STEP 5 충돌 카드 5개 자동 등장
-- 충돌 카드 textarea에 입력 → 새로고침해도 유지(sessionStorage)
-- 1~2명만 선택했을 때 STEP 5 섹션이 안 보이거나 0개일 때 깔끔히 비워짐
-
-- [ ] **Step 3: 타입 체크 + 커밋**
+- [ ] **Step 2: 타입체크**
 
 ```bash
 npm run typecheck
-git add app/critique/page.tsx
-git commit -m "$(cat <<'EOF'
-Add STEP 5 conflict section to critique page — auto-trigger from matrix, persisted rehearsal answers
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
 ```
+Expected: 오류 없음.
 
----
-
-# Phase 8 — Polish & 출시 준비
-
-## Task 8.1: a11y + 키보드 네비게이션 패스
-
-**Files:**
-- Modify (필요 시): `app/page.tsx`, `app/context/page.tsx`, `app/personas/page.tsx`, `app/critique/page.tsx`, `components/*`
-
-- [ ] **Step 1: 수동 a11y 체크리스트 (브라우저 + 키보드)**
-
-각 페이지에서 확인:
-- [ ] 모든 인터랙티브 요소가 Tab으로 도달 가능
-- [ ] 포커스 링이 보임 (Tailwind `focus-visible:ring`이 shadcn 기본 포함됨 — 확인만)
-- [ ] 이미지에 의미 있는 `alt` (드롭존 미리보기는 파일명, 페르소나 라벨은 텍스트라 OK)
-- [ ] 폼 라벨이 모두 `htmlFor` ↔ `id` 연결
-- [ ] `role="alert"`이 에러 메시지에 붙어 있음
-- [ ] 페이지 단위 `<h1>` 1개
-
-- [ ] **Step 2: 발견된 이슈가 있으면 최소한으로 패치 (없으면 스킵)**
-
-- [ ] **Step 3: 변경 있으면 커밋**
+- [ ] **Step 3: 커밋**
 
 ```bash
-git status
-# 변경 있을 때만:
-git add -A
-git commit -m "$(cat <<'EOF'
-Polish a11y — keyboard focus order, alt texts, labelled inputs across all 5 steps
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add app/result/page.tsx
+git commit -m "Implement STEP 4 + STEP 5 result page — streaming critique grid + auto conflict cards"
 ```
 
 ---
 
-## Task 8.2: Vercel 배포 노트 + README 업데이트
+**Phase C 검증 체크포인트**
+
+```bash
+npm test && npm run typecheck && npm run build
+```
+Expected: 모든 유닛·통합·UI 행동 테스트 통과, typecheck 통과, Next.js 빌드 성공.
+
+---
+
+# Phase D — 마무리
+
+---
+
+### Task D1: 로컬 end-to-end 수동 스모크 테스트
+
+이 단계에서는 실제 `ANTHROPIC_API_KEY`를 `.env`에 넣고 전체 플로우를 눈으로 확인한다.
+
+- [ ] **Step 1: `.env`에 키 설정 (이미 있으면 패스)**
+
+```bash
+grep -q ANTHROPIC_API_KEY .env || (echo "ANTHROPIC_API_KEY=\"sk-ant-...\"" >> .env)
+```
+
+- [ ] **Step 2: dev 서버 가동**
+
+```bash
+npm run dev
+```
+
+- [ ] **Step 3: 수동 체크리스트 (브라우저에서)**
+
+`http://localhost:3000` 접속 후 순서대로 확인:
+
+- [ ] STEP 1 랜딩 — 헤드라인 "완성작 들고 와요. 6명이 봐줍니다." 노출, 6인 이름 칩 노출, 디스클레이머 노출
+- [ ] 스크린샷 1장 이상 드롭 → "업로드됨: N장" 표시, "다음 — 맥락 대화" 버튼 활성화
+- [ ] STEP 2 — 좌측 썸네일, 우측 4개 질문 폼, coreProblem 비우면 제출 불가
+- [ ] STEP 3 — 6명 디폴트 체크 + "강한 충돌 5쌍" 문구, 토스 해제 시 숫자 변화
+- [ ] STEP 4 — 크리틱 받기 클릭 → 각 카드 텍스트가 스트리밍으로 채워짐, 완성 후 🩺/❓/💡 구조화 렌더
+- [ ] STEP 5 ⭐ — 페이지 하단에 충돌 카드 자동 등장, "당신은 어느 쪽?" 입력칸에 타이핑 → 새로고침 하면 날아감(예상)
+- [ ] 콘솔 에러 없음, 네트워크 탭에서 `/api/critique`에 `ANTHROPIC_API_KEY`가 노출되지 않음 (헤더/바디에서 검색)
+
+- [ ] **Step 4: 발견 이슈 기록 (있으면 별도 커밋으로 수정)**
+
+각 이슈를 작은 커밋으로: `"Fix STEP X: <증상>"`. 없으면 패스.
+
+- [ ] **Step 5: dev 서버 종료 (Ctrl+C)**
+
+---
+
+### Task D2: Vercel 배포 문서화 (`docs/DEPLOY.md`)
 
 **Files:**
-- Modify: `README.md`
+- Create: `docs/DEPLOY.md`
 
-- [ ] **Step 1: README에 배포 섹션 추가**
+- [ ] **Step 1: 배포 노트 작성**
 
 ```markdown
-## 배포 (Vercel)
+# Vercel 배포 노트
 
-1. Vercel에 GitHub 리포지토리 연결
-2. Project Settings → Environment Variables → `ANTHROPIC_API_KEY` 추가 (Production / Preview)
-3. Build & Deploy: Next.js 자동 감지, 추가 설정 불필요
+## 사전
+- Vercel 프로젝트 연결 (GitHub 저장소: `djvlwm602-collab/project06`)
+- Node.js: 기본 (Vercel이 Next.js 자동 감지)
 
-서버에서만 키를 사용하므로 (`/app/api/critique/route.ts`) 클라이언트 번들에 노출되지 않습니다. `NEXT_PUBLIC_` 접두사 절대 금지.
+## 환경변수
+Vercel 프로젝트 Settings → Environment Variables:
 
-## 모델 / 비용 메모
+| 이름 | 값 | 노출 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic Console 발급 키 | Server-only (절대 `NEXT_PUBLIC_*` 쓰지 말 것) |
 
-- 기본 모델: `claude-sonnet-4-6` (페르소나 1명당 max_tokens 600)
-- 시스템 프롬프트는 `cache_control: ephemeral`로 캐싱 — 같은 페르소나의 후속 호출은 캐시 hit
-- 6명 병렬 호출 → 1요청당 약 6 호출. 트래픽 초기엔 Claude API 분당 한도 모니터링.
+## 배포
+- `main` 브랜치 push → Production 자동 배포
+- Preview 배포는 PR 생성 시 자동
+
+## 수동 검증 (배포 후)
+- `/api/critique`가 직접 GET 호출 시 "Method Not Allowed"/405 (POST 전용)
+- 배포 URL에서 Network 탭으로 키가 클라이언트 번들에 포함 안 된 것 확인
+- 실제 스크린샷으로 5 STEP 전 과정 시연 1회
+
+## 롤백
+- Vercel 대시보드 → Deployments → 이전 배포 "Promote to Production"
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: 커밋**
 
 ```bash
-git add README.md
-git commit -m "$(cat <<'EOF'
-Document Vercel deploy + model/cost notes — env var setup, no NEXT_PUBLIC, prompt caching mention
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
-EOF
-)"
+git add docs/DEPLOY.md
+git commit -m "Add DEPLOY.md — Vercel env var setup + post-deploy verification checklist"
 ```
 
 ---
 
-## Task 8.3: 전체 수동 스모크 체크리스트 (출시 전 마지막 점검)
+### Task D3: Spec의 "구현 후 검토" 항목 티켓으로 박제
 
-> 자동 e2e가 없으니 사람이 한 번 끝까지 돌리며 확인. 발견된 버그는 별도 task로 추가하거나 즉시 수정.
+spec §4.6 "구현 후 검토 항목"은 구현 후 보면서 다듬기로 결정된 6개 항목. 다음 세션을 위해 체크리스트를 한곳에 박제한다.
 
-- [ ] **Step 1: 깨끗한 sessionStorage로 전체 플로우 (데스크톱 Chrome)**
-  - [ ] STEP 1 — 다중 이미지 드래그앤드롭, 썸네일 노출
-  - [ ] STEP 2 — 4질문 입력, kind/role 둘 다 선택해야 다음 활성
-  - [ ] STEP 3 — 6명 디폴트 체크, 토글 시 충돌 미리보기 N쌍 갱신
-  - [ ] STEP 4 — 6 카드 동시 스트리밍, 각 약 200자 가드레일
-  - [ ] STEP 5 — 충돌 카드 자동 등장, 입력 후 새로고침에도 보존
+**Files:**
+- Create: `docs/post-build-review.md`
 
-- [ ] **Step 2: 모바일 뷰포트 (Chrome DevTools iPhone 14 Pro)**
-  - [ ] STEP 4 카드가 세로 스택으로 정렬
-  - [ ] 폼 입력 시 모바일 키보드와 충돌 없음
+- [ ] **Step 1: 체크리스트 작성**
 
-- [ ] **Step 3: 엣지 케이스**
-  - [ ] 이미지 0장 상태에서 직접 `/context` 진입 → `/`로 리다이렉트
-  - [ ] 페르소나 1명만 선택 → STEP 5 섹션 안 나옴
-  - [ ] STEP 4 새로고침 → store 보존되어 다시 6번 호출 (의도 — refresh = retry)
-  - [ ] 잘못된 이미지 형식(.txt) → 에러 표시, 업로드 거부
+```markdown
+# Post-build Review Checklist
 
-- [ ] **Step 4: 발견된 회귀가 있으면 별도 commit으로 수정. 없으면 마지막 커밋 한 줄로 마무리**
+구현 후 눈으로 보면서 결정하기로 한 항목 (spec §4.6).
+
+- [ ] **단일/다중 이미지** — 1차 가안: 다중. 확인: 다중이 정말 필요한가, UX 부담 없는가
+- [ ] **STEP 3 디폴트 인원** — 1차 가안: 6명 전체. 확인: 첫 경험 압박 vs 풀세트 효과
+- [ ] **카드 그리드 (2열/3열)** — 1차 가안: 데스크톱 2열. 확인: 6장 한 화면 vs 스크롤
+- [ ] **카드 등장 애니메이션** — 1차 가안: 스트리밍 도착순. 확인: 동시 등장 vs 순차
+- [ ] **충돌 카드 인터랙션** — 1차 가안: 펼쳐진 채로. 확인: 접고 펴기 필요한가
+- [ ] **STEP 5 입력칸 → 결과 화면** — 1차 가안: 클라이언트 휘발. 확인: 공유/저장 기능 (V2 후보)
+
+각 항목은 실제 사용 1-2회 후 별도 세션에서 결정. 이 plan에서는 다루지 않는다.
+```
+
+- [ ] **Step 2: 커밋**
 
 ```bash
-# 변경 없으면 스킵
+git add docs/post-build-review.md
+git commit -m "Pin 6 post-build review items from spec §4.6 — revisit after live test"
+```
+
+---
+
+### Task D4: 최종 빌드·타입체크·테스트 한 번 더
+
+- [ ] **Step 1: 전체 파이프라인 실행**
+
+```bash
+npm run typecheck && npm test && npm run build
+```
+Expected: 모든 단계 통과.
+
+- [ ] **Step 2: git 상태 깨끗 확인**
+
+```bash
 git status
 ```
+Expected: `nothing to commit, working tree clean`.
+
+- [ ] **Step 3: 로그 요약**
+
+```bash
+git log --oneline -30
+```
+Expected: Phase A → B → C → D 순서의 커밋 로그가 읽히는 단위로 정리되어 있음.
 
 ---
 
-# 자체 리뷰 체크 (writing-plans 스킬 self-review)
+## 완료 기준 (Definition of Done)
 
-본 plan을 spec과 대조한 결과:
-
-**Spec 커버리지** — 각 spec 섹션이 어떤 task에서 구현되는가:
-- §2.1 페르소나 6인 → Task 1.1
-- §2.2 디스클레이머 → Task 3.1, Task 5.2(노출), §4.4 원칙 4 → Task 0.5(컬러 차용 금지)
-- §3.1 매트릭스 / §3.2 강한 충돌 5쌍 → Task 1.3
-- §4.1 충돌 트리거 정책(매트릭스 룩업) → Task 5.1, 7.2
-- §4.2 맥락 4질문 → Task 4.1, 4.2
-- §4.3 출력 가드레일 200자 → Task 1.2 (system prompt)
-- §4.4 7원칙 → Task 1.2 (system prompt)
-- §4.5 톤 가이드 → Task 1.2 (system prompt 공통 블록)
-- §4.6 STEP 1~5 유저 플로우 → Phase 3~7
-- §5.2 / §6 폴더 정리 → Task 0.1~0.3
-- §6.3 Tech Stack(Next.js 마이그레이션, API Routes로 키 보호) → Phase 0 + Phase 2
-- 부록 카피 후보 1번 ("완성작 들고 와요. 6명이 봐줍니다.") → Task 3.3
-
-빈 곳: 없음. 시각적 디테일(STEP 3 디폴트 인원, 카드 그리드, 애니메이션)은 spec §4.6에서 의도적으로 "구현 후 검토"로 미룬 항목 — Task 8.3 스모크 체크 후 별도 plan으로 다룸.
-
-**플레이스홀더 스캔**: TBD/TODO/이후 결정 — 모두 명시적 후속 plan이 필요한 부분(spec §4.6의 시각 디테일)에만 한정. 코드 step에는 placeholder 없음.
-
-**타입 일관성**: `Persona`, `ContextAnswers`, `UploadedImage`, `StrongConflict` 모두 단일 파일 정의 → 일관 사용 확인.
+- [ ] spec §2.1 6인 페르소나 데이터 + 테스트
+- [ ] spec §3.1/§3.2 매트릭스 + 5쌍 테마 + lookup + 테스트
+- [ ] spec §4.2 4개 맥락 질문
+- [ ] spec §4.3 40/50/80자 가드레일 + 테스트
+- [ ] spec §4.4 7원칙 + §4.5 톤 가이드가 system prompt에 박제 + 테스트
+- [ ] `/api/critique` 서버 사이드 스트리밍 + API 키 클라이언트 노출 0 + 모킹 통합 테스트
+- [ ] STEP 1~5 UI 전부 연결 (§4.6)
+- [ ] ⭐ STEP 5 "당신은 어느 쪽?" 입력칸 + 회귀 방지 테스트
+- [ ] 풀이 2 원칙: 회사 로고/색/폰트 사용 0 (중립 토큰만)
+- [ ] `docs/legacy/`에 옛 자료 이전 완료
+- [ ] README·package.json·tsconfig·index.html(Next.js가 흡수)·metadata.json(삭제) CRM 잔재 0
+- [ ] `npm run typecheck && npm test && npm run build` 그린
 
 ---
 
-# Execution Handoff
+## 자기 점검 (Self-Review)
 
-> 다음 액션 — `superpowers:executing-plans`(현 세션 인라인) 또는 `superpowers:subagent-driven-development`(서브에이전트 + 리뷰 체크포인트). 윤경님이 부르면 그 모드로 들어감.
+**spec 커버리지 매핑:**
 
-**플랜 메모**:
-- 총 약 30 task, 각 task 평균 4~6 step. TDD 사이클 일관 준수.
-- Phase 0의 task 0.3에서 큰 의존성 변경(`npm install`)이 일어나니, 그 후로는 머신 상태 깨지지 않게 한 번에 정리.
-- API 키가 필요한 첫 시점은 **Task 6.3 수동 스모크** — 그 전엔 mock 테스트로 진행 가능.
+| spec 섹션 | 구현 위치 |
+|---|---|
+| §2.1 페르소나 6인 | Task B1·B2 (`lib/personas`) |
+| §2.2 디스클레이머 | Task C2·C4·C8 (`components/app/Disclaimer.tsx`) |
+| §3.1 6×6 매트릭스 | Task B3 (`lib/conflict/matrix.ts`) |
+| §3.2 강한 충돌 5쌍 | Task B4 (`lib/conflict/themes.ts`) |
+| §4.1 자동 트리거 | Task B5 (`activeConflictThemes`) + Task C12 result 렌더링 |
+| §4.2 맥락 4질문 | Task B6 + Task C5 (`ContextForm`) |
+| §4.3 출력 포맷 가드 | Task B7 (`guardrails`) + Task B8 system prompt |
+| §4.4 디자인 7원칙 | Task B8 (`DESIGN_PRINCIPLES`) |
+| §4.5 톤 가이드 | Task B8 (`TONE_GUIDE`) |
+| §4.6 STEP 1~5 플로우 | Task C4, C6, C8, C12 |
+| §4.6 STEP 5 "어느 쪽?" ⭐ | Task C10 (`ConflictCard` + 회귀 테스트) |
+| §5.2 / §6.1 폴더 정리 | Task A1·A2 |
+| §6.3 Next.js 마이그레이션 | Phase A 전체 |
+| §6.3 API 키 보호 | Task B9 (`/api/critique` 서버 전용) |
+| 풀이 2 (로고/색 금지) | Task A7 (중립 토큰만) + Disclaimer |
+
+**타입 일관성:**
+- `PersonaId`: B1 정의 → B2·B3·B4·B5·B8·B9·C* 전역 재사용
+- `CritiqueCard`: B6 정의 → B7 검증 → C9 렌더
+- `ConflictTheme`: B4 정의 → B5 lookup → C10·C12 소비
+- `ContextAnswer`: B6 정의 → B9 API body → C5 폼
+
+placeholder·TBD 없음 확인 완료.
+
+---
+
+## 실행 핸드오프
+
+Plan complete and saved to `docs/plans/2026-04-17-design-critique-partner-plan.md`. Two execution options:
+
+**1. Subagent-Driven (recommended)** — Fresh subagent per task + two-stage review (use `superpowers:subagent-driven-development`).
+
+**2. Inline Execution** — Execute tasks in this session using `superpowers:executing-plans`, batch execution with checkpoints.
+
+실행 시작할 준비 되면 어느 방식으로 갈지 알려주세요.

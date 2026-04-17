@@ -9,7 +9,7 @@ Vercel 프로젝트 Settings → Environment Variables:
 
 | 이름 | 값 | 노출 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic Console 발급 키 | Server-only (절대 `NEXT_PUBLIC_*` 쓰지 말 것) |
+| `GEMINI_API_KEY` | Google AI Studio(https://aistudio.google.com/apikey) 발급 키 | Server-only (절대 `NEXT_PUBLIC_*` 쓰지 말 것) |
 
 ## 배포
 - `main` 브랜치 push → Production 자동 배포

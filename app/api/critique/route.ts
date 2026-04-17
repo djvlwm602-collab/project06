@@ -1,10 +1,10 @@
 /**
- * Role: Claude API 스트리밍 프록시 — 페르소나 1명 크리틱 생성
+ * Role: Gemini API 스트리밍 프록시 — 페르소나 1명 크리틱 생성
  * Key Features: 서버 사이드 전용 (API 키 보호), 이미지+맥락+페르소나 system prompt 조립, 스트리밍 패스스루
- * Dependencies: @anthropic-ai/sdk, @/lib/personas, @/lib/critique
+ * Dependencies: @google/genai, @/lib/personas, @/lib/critique
  * Notes: 클라이언트는 페르소나별로 이 엔드포인트를 병렬 호출한다 (§4.6 STEP 4)
  */
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { PERSONA_IDS, type PersonaId } from '@/lib/personas/types';
 import { buildSystemPrompt } from '@/lib/personas/system-prompt';
 import type { ContextAnswer } from '@/lib/critique/types';
@@ -21,7 +21,8 @@ function isPersonaId(x: unknown): x is PersonaId {
   return typeof x === 'string' && (PERSONA_IDS as readonly string[]).includes(x);
 }
 
-function buildUserContent(contextAnswers: ContextAnswer, images: ImageInput[]) {
+// 사용자 메시지: 이미지 inlineData 파트들 + 맥락 텍스트 1개
+function buildUserParts(contextAnswers: ContextAnswer, images: ImageInput[]) {
   const contextText = [
     `[작업 종류] ${contextAnswers.workKind}`,
     `[핵심 문제] ${contextAnswers.coreProblem}`,
@@ -34,11 +35,8 @@ function buildUserContent(contextAnswers: ContextAnswer, images: ImageInput[]) {
   ].join('\n');
 
   return [
-    ...images.map((img) => ({
-      type: 'image' as const,
-      source: { type: 'base64' as const, media_type: img.mediaType, data: img.base64 },
-    })),
-    { type: 'text' as const, text: contextText },
+    ...images.map((img) => ({ inlineData: { mimeType: img.mediaType, data: img.base64 } })),
+    { text: contextText },
   ];
 }
 
@@ -56,27 +54,32 @@ export async function POST(req: Request): Promise<Response> {
   if (!Array.isArray(body.images) || body.images.length === 0)
     return new Response('missing images', { status: 400 });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return new Response('server misconfigured', { status: 500 });
 
-  const client = new Anthropic({ apiKey });
+  const ai = new GoogleGenAI({ apiKey });
 
-  const system = buildSystemPrompt(body.personaId);
-  const userContent = buildUserContent(body.contextAnswers, body.images);
+  const systemInstruction = buildSystemPrompt(body.personaId);
+  const parts = buildUserParts(body.contextAnswers, body.images);
 
-  const stream = client.messages.stream({
-    model: 'claude-sonnet-4-5',
-    max_tokens: 800,
-    system,
-    messages: [{ role: 'user', content: userContent }],
-  } as any);
+  // generateContentStream은 AsyncGenerator<GenerateContentResponse>를 반환
+  const stream = await ai.models.generateContentStream({
+    model: 'gemini-2.5-flash',
+    contents: [{ role: 'user', parts }],
+    config: {
+      systemInstruction,
+      maxOutputTokens: 800,
+      responseMimeType: 'application/json',
+    },
+  });
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const chunk of (stream as any).toTextStream()) {
-          controller.enqueue(encoder.encode(chunk));
+        for await (const chunk of stream) {
+          const text = chunk.text;
+          if (text) controller.enqueue(encoder.encode(text));
         }
         controller.close();
       } catch (err) {

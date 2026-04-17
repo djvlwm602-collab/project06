@@ -1,5 +1,5 @@
 /**
- * Role: Claude API에 보낼 system prompt 생성 (페르소나별)
+ * Role: Gemini API에 보낼 system instruction 생성 (페르소나별)
  * Key Features: 공통(디자인 7원칙 + 톤 가이드 + 출력 가드) + 페르소나별(렌즈·질문 영역·대표 질문)
  * Dependencies: ./definitions, ./types
  * Notes: 자구 한 글자도 무게 있음 — spec §4.4/§4.5 원문 유지

@@ -4,11 +4,13 @@
 
 **Goal:** 포트폴리오 스크린샷을 업로드하면 6인의 "○○ 스타일" 페르소나가 병렬 스트리밍으로 크리틱을 주고, 강한 충돌 쌍에는 "당신은 어느 쪽?" 자기 표현 리허설 카드를 띄우는 Next.js 앱을 구현한다.
 
-**Architecture:** Next.js 15 App Router + React 19 + Tailwind 4 + shadcn/ui. Claude API 호출은 `/api/critique`(Route Handler)에서 서버 사이드만 수행 (API 키 보호). 도메인 로직(페르소나 데이터, 충돌 매트릭스, system prompt 빌더, 카드 길이 가드레일)은 순수 TS 함수로 분리 → 풀 TDD. API Route는 `@anthropic-ai/sdk` 모킹 통합 테스트. UI는 STEP별 최소 행동 테스트. 클라이언트 상태는 Zustand 단일 스토어(파일, 맥락 답변, 선택 페르소나, 크리틱 결과). STEP 5 "어느 쪽?" 입력은 스토어 내 클라이언트 상태로만 저장(DB 없음).
+**Architecture:** Next.js 15 App Router + React 19 + Tailwind 4 + shadcn/ui. Gemini API 호출은 `/api/critique`(Route Handler)에서 서버 사이드만 수행 (API 키 보호). 도메인 로직(페르소나 데이터, 충돌 매트릭스, system prompt 빌더, 카드 길이 가드레일)은 순수 TS 함수로 분리 → 풀 TDD. API Route는 `@google/genai` 모킹 통합 테스트. UI는 STEP별 최소 행동 테스트. 클라이언트 상태는 Zustand 단일 스토어(파일, 맥락 답변, 선택 페르소나, 크리틱 결과). STEP 5 "어느 쪽?" 입력은 스토어 내 클라이언트 상태로만 저장(DB 없음).
 
-**Tech Stack:** Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, `@anthropic-ai/sdk`, Zustand, Vitest, @testing-library/react, jsdom.
+**Tech Stack:** Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, `@google/genai` (model: `gemini-2.5-flash`), Zustand, Vitest, @testing-library/react, jsdom.
 
 **SSOT(Single Source of Truth):** `docs/specs/2026-04-16-design-critique-partner-spec.md`. 본 plan은 spec §0–§8을 구현으로 옮긴 것이다. 스펙에서 벗어나는 결정을 새로 하지 말 것.
+
+> **2026-04-17 Migration Note**: 본 plan에 박제된 Anthropic SDK(`@anthropic-ai/sdk`, `claude-sonnet-4-5`, `cache_control: ephemeral`) 관련 코드 블록·env var·헬퍼 파일명(`mock-anthropic.ts`)은 **historical**이다. 윤경님 결정으로 같은 날 Gemini로 전환 — 실제 구현은 main 브랜치(`app/api/critique/route.ts`, `tests/helpers/mock-gemini.ts`, `.env.example`, `docs/DEPLOY.md`) 참조. spec §6.2 표도 같은 결정 반영.
 
 ---
 

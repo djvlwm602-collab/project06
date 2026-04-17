@@ -1,23 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { textStreamOf } from '@/tests/helpers/mock-anthropic';
+import { chunkStreamOf } from '@/tests/helpers/mock-gemini';
 
 // vi.mock은 파일 최상단으로 호이스팅되므로, mock factory가 참조하는 변수도 vi.hoisted로 감싸야 한다.
 // vitest.config의 globals:true 덕분에 hoisted 콜백 안에서도 전역 vi가 사용 가능하다.
 const hoisted = vi.hoisted(() => {
-  const messages = { stream: vi.fn() };
-  const ctor = vi.fn().mockImplementation(() => ({ messages }));
-  return { ctor, messages };
+  const generateContentStream = vi.fn();
+  const models = { generateContentStream };
+  const ctor = vi.fn().mockImplementation(() => ({ models }));
+  return { ctor, models };
 });
-vi.mock('@anthropic-ai/sdk', () => ({ default: hoisted.ctor }));
+vi.mock('@google/genai', () => ({ GoogleGenAI: hoisted.ctor }));
 
 import { POST } from '@/app/api/critique/route';
 
 describe('POST /api/critique', () => {
   beforeEach(() => {
-    process.env.ANTHROPIC_API_KEY = 'test-key';
+    process.env.GEMINI_API_KEY = 'test-key';
     hoisted.ctor.mockClear();
-    hoisted.messages.stream.mockReset();
-    hoisted.messages.stream.mockReturnValue(textStreamOf(['{"diagnosis":', '"hi"}']));
+    hoisted.models.generateContentStream.mockReset();
+    hoisted.models.generateContentStream.mockReturnValue(chunkStreamOf(['{"diagnosis":', '"hi"}']));
   });
 
   it('유효한 요청에 대해 스트림 응답을 반환한다', async () => {
@@ -41,7 +42,7 @@ describe('POST /api/critique', () => {
     expect(text).toBe('{"diagnosis":"hi"}');
   });
 
-  it('Anthropic messages.stream이 토스 PO용 system prompt로 호출된다', async () => {
+  it('Gemini generateContentStream이 토스 PO용 systemInstruction으로 호출된다', async () => {
     const req = new Request('http://localhost/api/critique', {
       method: 'POST',
       body: JSON.stringify({
@@ -52,11 +53,11 @@ describe('POST /api/critique', () => {
       headers: { 'content-type': 'application/json' },
     });
     await POST(req);
-    expect(hoisted.messages.stream).toHaveBeenCalledOnce();
-    const arg = hoisted.messages.stream.mock.calls[0][0];
-    expect(arg.system).toContain('토스 스타일 PO');
-    expect(arg.messages[0].content).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 'image' })])
+    expect(hoisted.models.generateContentStream).toHaveBeenCalledOnce();
+    const arg = hoisted.models.generateContentStream.mock.calls[0][0];
+    expect(arg.config.systemInstruction).toContain('토스 스타일 PO');
+    expect(arg.contents[0].parts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ inlineData: expect.objectContaining({ mimeType: 'image/png' }) })])
     );
   });
 
@@ -70,8 +71,8 @@ describe('POST /api/critique', () => {
     expect(res.status).toBe(400);
   });
 
-  it('ANTHROPIC_API_KEY 누락 시 500', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  it('GEMINI_API_KEY 누락 시 500', async () => {
+    delete process.env.GEMINI_API_KEY;
     const req = new Request('http://localhost/api/critique', {
       method: 'POST',
       body: JSON.stringify({

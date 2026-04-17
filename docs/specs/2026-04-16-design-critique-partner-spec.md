@@ -265,8 +265,8 @@ type Persona = {
 
 | 파일 | 상태 | 처리 |
 |---|---|---|
-| `.env.example` | `ANTHROPIC_API_KEY` ✓ Claude API | 유지 |
-| `package.json` | `@anthropic-ai/sdk` ✓ React 19 | Next.js 마이그레이션 시 의존성 재정리 (next 추가, vite 제거) |
+| `.env.example` | `GEMINI_API_KEY` ✓ Gemini API (2026-04-17 전환) | 유지 |
+| `package.json` | `@google/genai` ✓ React 19 (2026-04-17 Anthropic→Gemini 전환) | Next.js 마이그레이션 시 의존성 재정리 (next 추가, vite 제거) |
 | `design-system.html` (25KB) | 토스 컬러 기반 — 풀이 2 원칙과 충돌 | **`docs/legacy/`로 이동** (참고 자료 보관) |
 | `docs/design-tokens.md` | CRM 칸반용 (테이블/DataTableBody 토큰) | **`docs/legacy/`로 이동** (참고 자료 보관) |
 | `.gitignore` | `.env*` + `!.env.example` ✓ 비밀값 보호 OK | 유지 |

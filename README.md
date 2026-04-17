@@ -12,7 +12,7 @@
 # 1. 의존성 설치
 npm install
 
-# 2. .env 셋업 — ANTHROPIC_API_KEY 채우기
+# 2. .env 셋업 — GEMINI_API_KEY 채우기
 cp .env.example .env
 
 # 3. dev 서버
@@ -35,13 +35,13 @@ npm run dev
 
 - Next.js 15 (App Router) + React 19 + TypeScript
 - Tailwind CSS 4 + shadcn/ui (중립 색상만 — 회사 브랜드 컬러 차용 금지)
-- `@anthropic-ai/sdk` (서버 사이드만, `/api/critique`)
+- `@google/genai` (서버 사이드만, `/api/critique`, 모델 `gemini-2.5-flash`)
 - Zustand (클라이언트 상태)
 - Vitest + @testing-library/react (테스트)
 
 ## 배포
 
-Vercel 권장. 환경변수 `ANTHROPIC_API_KEY`만 설정하면 됨.
+Vercel 권장. 환경변수 `GEMINI_API_KEY`만 설정하면 됨.
 
 ## 문서
 
